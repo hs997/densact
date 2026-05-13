@@ -14,16 +14,30 @@ class PlatoonHAPPOEnvCfg(PlatoonEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
+
+        # ------------------------------------------------------------------
+        # framework_teacher_attack_v1 baseline (single source of truth)
+        # NOTE: for experiments, only modify values in this block.
+        # ------------------------------------------------------------------
+
+        # Core routing switches
         self.algorithm.algorithm = "happo"
-        self.algorithm.enable_teacher = True
-        self.algorithm.enable_attack = True
-        self.algorithm.attack_level = "hard"
-        self.algorithm.enable_shield = True
         self.algorithm.use_happo_layout = True
         self.algorithm.use_happo_actions = True
         self.algorithm.freeze_outer_ppo = True
 
-        # Keep env-side algorithm knobs in sync with runner-side defaults.
+        # Module toggles
+        self.algorithm.enable_teacher = True
+        self.algorithm.enable_attack = True
+        self.algorithm.enable_shield = True
+
+        # Attack baseline profile
+        self.algorithm.attack_level = "hard"  # off|easy|medium|hard
+        self.algorithm.attack_target_mode = "all"  # all|rel_pos|vel
+        self.algorithm.attack_seed = 3407
+        self.algorithm.attack_log_interval_updates = 20
+
+        # HAPPO baseline knobs
         self.algorithm.happo_actor_lr = 5.0e-5
         self.algorithm.happo_critic_lr = 5.0e-5
         self.algorithm.happo_clip_param = 0.1
@@ -33,7 +47,11 @@ class PlatoonHAPPOEnvCfg(PlatoonEnvCfg):
         self.algorithm.happo_action_warmup_updates = 30
         self.algorithm.happo_log_interval = 256
         self.algorithm.happo_log_level = "basic"
+
+        # Teacher baseline knobs
         self.algorithm.teacher_shaping_coef = 0.002
+        self.algorithm.teacher_lr = 1.0e-4
+        self.algorithm.teacher_update_interval = 5
         self.algorithm.teacher_shaping_clip = 0.03
         self.algorithm.teacher_action_penalty_coef = 0.01
 

@@ -265,6 +265,17 @@ class PlatoonAlgorithmRouter:
                             f"teacher_loss={float(tea_info.get('teacher_loss', 0.0)):.4f}, "
                             f"teacher_grad_norm={float(tea_info.get('teacher_grad_norm', 0.0)):.4f}"
                         )
+                    if self.pipeline is not None and hasattr(self.pipeline.shield, "get_stats"):
+                        shield_stats = self.pipeline.shield.get_stats()
+                        if isinstance(shield_stats, dict):
+                            print(
+                                "[Platoon Shield] stats: "
+                                f"update={self.happo_update_count}, "
+                                f"warn_rate={float(shield_stats.get('shield_warn_rate', 0.0)):.4f}, "
+                                f"critical_rate={float(shield_stats.get('shield_critical_rate', 0.0)):.4f}, "
+                                f"trigger_rate={float(shield_stats.get('shield_trigger_rate', 0.0)):.4f}, "
+                                f"scale_mean={float(shield_stats.get('shield_scale_mean', 1.0)):.4f}"
+                            )
         else:
             next_share_obs = merge_agent_obs(next_agent_obs)
             self.runner.buffer.insert(

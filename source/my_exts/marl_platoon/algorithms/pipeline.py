@@ -126,6 +126,10 @@ class PlatoonTrainingPipeline:
         self.student_updates = 0
         self.attacker_updates = 0
         self.teacher_updates = 0
+        # Step-1 teacher outer-objective cache (window-level, first-order only).
+        self._teacher_outer_j_pre: float | None = None
+        self._teacher_outer_j_latest = 0.0
+        self._teacher_outer_delta_j = 0.0
 
     def preprocess_obs_for_student(self, obs: torch.Tensor) -> torch.Tensor:
         if self.flags.enable_attack:
@@ -140,8 +144,34 @@ class PlatoonTrainingPipeline:
             result = self.shield.project_action(obs, result)
         return result
 
+    def _compute_teacher_outer_score_j(self, batch: StepBatch) -> float:
+        """Compute Step-1 outer objective score J for teacher updates.
+
+        This is a first-order meta proxy (no second-order gradient):
+            J = reward_mean + forward_drive - no_backward_penalty - bad_done_rate
+
+        where:
+        - reward_mean: current shaped reward mean over env/agent dims
+        - forward_drive: positive forward command magnitude proxy
+        - no_backward_penalty: negative forward command magnitude proxy
+        - bad_done_rate: termination proxy (includes reset_on_bad_ori when present)
+
+        The teacher outer signal is then defined over windows:
+            delta_j = J_post - J_pre
+        """
+        reward_mean = float(batch.rewards.mean().item())
+        forward_component = batch.actions[..., 0]
+        forward_drive = float(torch.relu(forward_component).mean().item())
+        no_backward_penalty = float(torch.relu(-forward_component).mean().item())
+        bad_done_rate = float(batch.dones.float().mean().item())
+        return reward_mean + forward_drive - no_backward_penalty - bad_done_rate
+
     def process_transition(self, batch: StepBatch) -> dict[str, Any]:
         self.total_steps += 1
+        teacher_outer_j = self._compute_teacher_outer_score_j(batch)
+        if self._teacher_outer_j_pre is None:
+            self._teacher_outer_j_pre = teacher_outer_j
+        self._teacher_outer_j_latest = teacher_outer_j
 
         if self.flags.enable_teacher:
             batch.rewards = self.teacher.shape_reward(batch.obs, batch.actions, batch.rewards)
@@ -158,7 +188,18 @@ class PlatoonTrainingPipeline:
                 self.attacker_updates += 1
                 logs["attacker_update"] = atk_info
             if self.flags.enable_teacher and self.student_updates % max(self.schedule.teacher_every_student_updates, 1) == 0:
-                tea_info = self.teacher.maybe_update({"student_updates": self.student_updates})
+                j_pre = self._teacher_outer_j_pre if self._teacher_outer_j_pre is not None else self._teacher_outer_j_latest
+                j_post = self._teacher_outer_j_latest
+                self._teacher_outer_delta_j = j_post - j_pre
+                tea_info = self.teacher.maybe_update(
+                    {
+                        "student_updates": self.student_updates,
+                        "teacher_j_pre": j_pre,
+                        "teacher_j_post": j_post,
+                        "teacher_delta_j": self._teacher_outer_delta_j,
+                    }
+                )
+                self._teacher_outer_j_pre = self._teacher_outer_j_latest
                 self.teacher_updates += 1
                 logs["teacher_update"] = tea_info
 

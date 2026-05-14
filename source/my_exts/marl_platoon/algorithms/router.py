@@ -263,6 +263,16 @@ class PlatoonAlgorithmRouter:
                             f"update={self.happo_update_count}, "
                             f"shaping_mean={float(tea_info.get('teacher_shaping_mean', 0.0)):.4f}, "
                             f"teacher_loss={float(tea_info.get('teacher_loss', 0.0)):.4f}, "
+                            f"teacher_base_loss={float(tea_info.get('teacher_base_loss', 0.0)):.4f}, "
+                            f"teacher_consistency_loss={float(tea_info.get('teacher_consistency_loss', 0.0)):.4f}, "
+                            f"teacher_delta_j={float(tea_info.get('teacher_delta_j', 0.0)):.4f}, "
+                            f"teacher_norm_delta_j={float(tea_info.get('teacher_norm_delta_j', 0.0)):.4f}, "
+                            f"teacher_outer_coef_scale={float(tea_info.get('teacher_outer_coef_scale', 0.0)):.4f}, "
+                            f"teacher_outer_loss={float(tea_info.get('teacher_outer_loss', 0.0)):.4f}, "
+                            f"teacher_adv_corr={float(tea_info.get('teacher_advantage_corr', 0.0)):.4f}, "
+                            f"phy_adv_std={float(tea_info.get('teacher_physical_adv_std', 0.0)):.4f}, "
+                            f"shape_adv_std={float(tea_info.get('teacher_shaping_adv_std', 0.0)):.4f}, "
+                            f"window_samples={float(tea_info.get('teacher_window_samples', 0.0)):.0f}, "
                             f"teacher_grad_norm={float(tea_info.get('teacher_grad_norm', 0.0)):.4f}"
                         )
                     if self.pipeline is not None and hasattr(self.pipeline.shield, "get_stats"):

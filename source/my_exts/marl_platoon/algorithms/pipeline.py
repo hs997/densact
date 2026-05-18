@@ -185,12 +185,19 @@ class PlatoonTrainingPipeline:
             self.student_updates += 1
             if self.flags.enable_attack and self.student_updates % max(self.schedule.attacker_every_student_updates, 1) == 0:
                 forward_component = batch.actions[..., 0]
+                rewards = batch.rewards
+                dones = batch.dones
                 attack_context = {
                     "student_updates": self.student_updates,
-                    "reward_mean": float(batch.rewards.mean().item()),
+                    "reward_mean": float(rewards.mean().item()),
                     "forward_drive": float(torch.relu(forward_component).mean().item()),
                     "no_backward_penalty": float(torch.relu(-forward_component).mean().item()),
-                    "bad_done_rate": float(batch.dones.float().mean().item()),
+                    "bad_done_rate": float(dones.float().mean().item()),
+                    # lightweight physical proxies for CA-GAN conditioning
+                    "spacing_err_proxy": float(rewards.abs().mean().item()),
+                    "vel_err_proxy": float(torch.relu(forward_component.abs() - 0.5).mean().item()),
+                    "acc_proxy": float(torch.relu(batch.actions[..., 0].abs() - 0.2).mean().item()),
+                    "jerk_proxy": float(torch.relu(batch.actions.diff(dim=0).abs().mean() if batch.actions.shape[0] > 1 else torch.tensor(0.0, device=batch.actions.device)).item()),
                 }
                 atk_info = self.attacker.maybe_update(attack_context)
                 self.attacker_updates += 1

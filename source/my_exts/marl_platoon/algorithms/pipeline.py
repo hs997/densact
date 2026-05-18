@@ -184,7 +184,15 @@ class PlatoonTrainingPipeline:
         if update_info is not None:
             self.student_updates += 1
             if self.flags.enable_attack and self.student_updates % max(self.schedule.attacker_every_student_updates, 1) == 0:
-                atk_info = self.attacker.maybe_update({"student_updates": self.student_updates})
+                forward_component = batch.actions[..., 0]
+                attack_context = {
+                    "student_updates": self.student_updates,
+                    "reward_mean": float(batch.rewards.mean().item()),
+                    "forward_drive": float(torch.relu(forward_component).mean().item()),
+                    "no_backward_penalty": float(torch.relu(-forward_component).mean().item()),
+                    "bad_done_rate": float(batch.dones.float().mean().item()),
+                }
+                atk_info = self.attacker.maybe_update(attack_context)
                 self.attacker_updates += 1
                 logs["attacker_update"] = atk_info
             if self.flags.enable_teacher and self.student_updates % max(self.schedule.teacher_every_student_updates, 1) == 0:

@@ -146,6 +146,16 @@ class PlatoonAlgorithmRouter:
             target_mode=str(getattr(self.cfg, "attack_target_mode", "all")),
             obs_dim=obs_dim,
             seed=int(getattr(self.cfg, "attack_seed", 3407)),
+            mode=str(getattr(self.cfg, "attack_mode", "profile")),
+            noise_dim=int(getattr(self.cfg, "attack_noise_dim", 16)),
+            hidden_dim=int(getattr(self.cfg, "attack_hidden_dim", 128)),
+            realism_coef=float(getattr(self.cfg, "attack_realism_coef", 0.10)),
+            generator_lr=float(getattr(self.cfg, "attack_generator_lr", 1.0e-4)),
+            discriminator_lr=float(getattr(self.cfg, "attack_discriminator_lr", 1.0e-4)),
+            update_interval=int(getattr(self.cfg, "attack_update_interval", 4)),
+            attack_obj_coef=float(getattr(self.cfg, "attack_obj_coef", 1.0)),
+            reward_proxy_coef=float(getattr(self.cfg, "attack_reward_proxy_coef", 1.0)),
+            dos_proxy_coef=float(getattr(self.cfg, "attack_dos_proxy_coef", 0.3)),
         )
         attacker = RandomFDIDoSAttackModule(attack_cfg) if attack_cfg.enabled else NoOpAttackModule(attack_cfg)
         self._attack_config_text = (
@@ -153,7 +163,10 @@ class PlatoonAlgorithmRouter:
             f"max_fdi_pos={attack_cfg.max_fdi_pos:.3f}, "
             f"max_fdi_acc={attack_cfg.max_fdi_acc:.3f}, "
             f"max_dos_rate={attack_cfg.max_dos_rate:.3f}, "
-            f"target_mode={attack_cfg.target_mode}, seed={attack_cfg.seed}"
+            f"target_mode={attack_cfg.target_mode}, mode={attack_cfg.mode}, seed={attack_cfg.seed}, "
+            f"obj_coef={attack_cfg.attack_obj_coef:.3f}, "
+            f"reward_coef={attack_cfg.reward_proxy_coef:.3f}, "
+            f"dos_coef={attack_cfg.dos_proxy_coef:.3f}"
         )
         shield = BadHeadingShieldModule(
             self.env,
@@ -252,8 +265,23 @@ class PlatoonAlgorithmRouter:
                             "[Platoon Attack] stats: "
                             f"update={self.happo_update_count}, "
                             f"enabled={int(atk_info.get('attack_enabled', 0.0))}, "
+                            f"mode={atk_info.get('attack_mode', 'n/a')}, "
                             f"fdi_abs_mean={float(atk_info.get('fdi_abs_mean', 0.0)):.4f}, "
                             f"dos_rate={float(atk_info.get('dos_rate', 0.0)):.4f}, "
+                            f"obs_fdi={float(atk_info.get('obs_fdi_abs_mean', 0.0)):.4f}, "
+                            f"obs_dos={float(atk_info.get('obs_dos_rate', 0.0)):.4f}, "
+                            f"act_fdi={float(atk_info.get('act_fdi_abs_mean', 0.0)):.4f}, "
+                            f"act_dos={float(atk_info.get('act_dos_rate', 0.0)):.4f}, "
+                            f"act_budget={float(atk_info.get('act_dos_budget', 0.0)):.4f}, "
+                            f"act_drop_n={float(atk_info.get('act_drop_count', 0.0)):.0f}, "
+                            f"act_elem_n={float(atk_info.get('act_elem_n', 0.0)):.0f}, "
+                            f"stats_bad={int(atk_info.get('attack_stats_inconsistent', 0.0))}, "
+                            f"g_loss={float(atk_info.get('attack_g_loss', 0.0)):.4f}, "
+                            f"d_loss={float(atk_info.get('attack_d_loss', 0.0)):.4f}, "
+                            f"realism_loss={float(atk_info.get('attack_realism_loss', 0.0)):.4f}, "
+                            f"obj_proxy={float(atk_info.get('attack_obj_proxy', 0.0)):.4f}, "
+                            f"ref_tpl={atk_info.get('attack_ref_template_id', 'none')}, "
+                            f"uniq_ref20={float(atk_info.get('attack_unique_ref_tpl_count', 0.0)):.0f}, "
                             f"config=({getattr(self, '_attack_config_text', 'n/a')})"
                         )
                     tea_info = logs.get("teacher_update")

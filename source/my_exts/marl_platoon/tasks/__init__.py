@@ -31,11 +31,21 @@ class PlatoonHAPPOEnvCfg(PlatoonEnvCfg):
         self.algorithm.enable_attack = True
         self.algorithm.enable_shield = True
 
-        # Attack baseline profile
+        # Attack baseline profile / CA-GAN skeleton
         self.algorithm.attack_level = "hard"  # off|easy|medium|hard
         self.algorithm.attack_target_mode = "all"  # all|rel_pos|vel
         self.algorithm.attack_seed = 3407
         self.algorithm.attack_log_interval_updates = 20
+        self.algorithm.attack_mode = "cagan"  # profile|generator|cagan
+        self.algorithm.attack_noise_dim = 16
+        self.algorithm.attack_hidden_dim = 128
+        self.algorithm.attack_realism_coef = 0.10
+        self.algorithm.attack_generator_lr = 1.0e-4
+        self.algorithm.attack_discriminator_lr = 1.0e-4
+        self.algorithm.attack_update_interval = 4
+        self.algorithm.attack_obj_coef = 1.2
+        self.algorithm.attack_reward_proxy_coef = 1.0
+        self.algorithm.attack_dos_proxy_coef = 0.3
 
         # HAPPO baseline knobs
         self.algorithm.happo_actor_lr = 5.0e-5

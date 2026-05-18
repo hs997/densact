@@ -55,6 +55,16 @@ class PlatoonAlgorithmCfg:
     attack_target_mode: str = "all"  # all|rel_pos|vel
     attack_seed: int = 3407
     attack_log_interval_updates: int = 20
+    attack_mode: str = "profile"  # profile|generator|cagan
+    attack_noise_dim: int = 16
+    attack_hidden_dim: int = 128
+    attack_realism_coef: float = 0.10
+    attack_generator_lr: float = 1.0e-4
+    attack_discriminator_lr: float = 1.0e-4
+    attack_update_interval: int = 4
+    attack_obj_coef: float = 1.2
+    attack_reward_proxy_coef: float = 1.0
+    attack_dos_proxy_coef: float = 0.3
 
 
 @configclass

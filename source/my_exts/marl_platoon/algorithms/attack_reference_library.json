@@ -1,0 +1,87 @@
+{
+  "library_meta": {
+    "name": "platoon_attack_reference_library",
+    "version": "v1",
+    "created_at": "2026-05-17"
+  },
+  "global_defaults": {
+    "sample_weight": 1.0
+  },
+  "papers": [
+    {
+      "paper_id": "P001",
+      "attack_family": [
+        {
+          "template_id": "P001_T1",
+          "attack_type": "hybrid",
+          "target_features": ["rel_pos", "vel", "acc"],
+          "state_condition": {"enabled": true, "rule_key": "high_rel_pos_or_acc_error", "thresholds": {"rel_pos_error_abs": 2.0, "acc_error_abs": 1.0}},
+          "timing": {"mode": "event_triggered", "start_step": 50, "end_step": -1, "period": 0, "burst_len": 8, "duty_cycle": 0.20},
+          "fdi": {"pattern": "piecewise", "amplitude": {"pos": {"min": 1.0, "max": 6.0}, "acc": {"min": 0.3, "max": 2.0}}, "sign_policy": "state_dependent", "noise_std": 0.05, "amplitude_space": "physical"},
+          "dos": {"enabled": true, "drop_rate": 0.20, "drop_mode": "burst", "hold_strategy": "zoh"},
+          "sample_weight": 1.2
+        }
+      ]
+    },
+    {
+      "paper_id": "P002",
+      "attack_family": [
+        {
+          "template_id": "P002_T1",
+          "attack_type": "dos",
+          "target_features": ["all"],
+          "state_condition": {"enabled": true, "rule_key": "event_error_high", "thresholds": {"event_error_norm": 1.0}},
+          "timing": {"mode": "event_triggered", "start_step": 30, "end_step": -1, "period": 0, "burst_len": 6, "duty_cycle": 0.15},
+          "fdi": {"pattern": "constant_bias", "amplitude": {"pos": {"min": 0.0, "max": 0.0}, "acc": {"min": 0.0, "max": 0.0}}, "sign_policy": "fixed", "noise_std": 0.0, "amplitude_space": "physical"},
+          "dos": {"enabled": true, "drop_rate": 0.22, "drop_mode": "burst", "hold_strategy": "zoh"},
+          "sample_weight": 1.1
+        }
+      ]
+    },
+    {
+      "paper_id": "P003",
+      "attack_family": [
+        {
+          "template_id": "P003_T1",
+          "attack_type": "dos",
+          "target_features": ["all"],
+          "state_condition": {"enabled": false, "rule_key": "none", "thresholds": {}},
+          "timing": {"mode": "periodic", "start_step": 40, "end_step": -1, "period": 100, "burst_len": 20, "duty_cycle": 0.20},
+          "fdi": {"pattern": "constant_bias", "amplitude": {"pos": {"min": 0.0, "max": 0.0}, "acc": {"min": 0.0, "max": 0.0}}, "sign_policy": "fixed", "noise_std": 0.0, "amplitude_space": "physical"},
+          "dos": {"enabled": true, "drop_rate": 0.20, "drop_mode": "periodic", "hold_strategy": "zoh"},
+          "sample_weight": 1.0
+        }
+      ]
+    },
+    {
+      "paper_id": "P004",
+      "attack_family": [
+        {
+          "template_id": "P004_T1",
+          "attack_type": "hybrid",
+          "target_features": ["rel_pos", "vel", "acc"],
+          "state_condition": {"enabled": true, "rule_key": "high_rel_pos_or_jerk", "thresholds": {"rel_pos_error_abs": 1.5, "jerk_abs": 1.0}},
+          "timing": {"mode": "event_triggered", "start_step": 60, "end_step": -1, "period": 0, "burst_len": 12, "duty_cycle": 0.25},
+          "fdi": {"pattern": "piecewise", "amplitude": {"pos": {"min": 1.0, "max": 8.0}, "acc": {"min": 0.5, "max": 3.0}}, "sign_policy": "state_dependent", "noise_std": 0.08, "amplitude_space": "physical"},
+          "dos": {"enabled": true, "drop_rate": 0.25, "drop_mode": "bernoulli", "hold_strategy": "zoh"},
+          "sample_weight": 1.3
+        }
+      ]
+    },
+    {
+      "paper_id": "P005",
+      "attack_family": [
+        {
+          "template_id": "P005_T1",
+          "attack_type": "fdi",
+          "target_features": ["rel_pos", "vel"],
+          "state_condition": {"enabled": true, "rule_key": "near_headway_boundary", "thresholds": {"rel_pos_error_abs": 1.0, "headway_margin": 0.5}},
+          "timing": {"mode": "continuous", "start_step": 50, "end_step": -1, "period": 0, "burst_len": 0, "duty_cycle": 0.0},
+          "fdi": {"pattern": "constant_bias", "amplitude": {"pos": {"min": 1.0, "max": 8.0}, "acc": {"min": 0.0, "max": 0.0}}, "sign_policy": "state_dependent", "noise_std": 0.04, "amplitude_space": "physical"},
+          "dos": {"enabled": false, "drop_rate": 0.0, "drop_mode": "bernoulli", "hold_strategy": "zoh"},
+          "sample_weight": 1.2
+        }
+      ]
+    }
+  ]
+}

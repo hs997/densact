@@ -18,7 +18,7 @@ class PlatoonAlgorithmCfg:
       If True, wrapper overrides external PPO actions with internal HAPPO
       actions before `env.step()`.
     - enable_teacher / enable_attack / enable_shield:
-      Reserved feature toggles (kept off in the current HAPPO baseline).
+      Enable the task-local MGRS Teacher, CA-GAN attacker, and safety shield.
     - happo_log_interval:
       Rollout log interval in environment steps.
     - happo_log_level:
@@ -26,6 +26,7 @@ class PlatoonAlgorithmCfg:
     """
 
     algorithm: str = "ppo"
+    num_agents: int = 5
     enable_teacher: bool = False
     enable_attack: bool = False
     enable_shield: bool = False
@@ -36,22 +37,39 @@ class PlatoonAlgorithmCfg:
     freeze_outer_ppo: bool = False
 
     # HAPPO stability knobs (task-internal)
-    happo_actor_lr: float = 5.0e-5
-    happo_critic_lr: float = 5.0e-5
-    happo_clip_param: float = 0.1
-    happo_ppo_epoch: int = 3
-    happo_max_grad_norm: float = 0.3
-    happo_action_clip: float = 0.3
-    happo_action_warmup_updates: int = 30
+    happo_actor_lr: float = 1.0e-5
+    happo_critic_lr: float = 1.0e-5
+    happo_clip_param: float = 0.05
+    happo_ppo_epoch: int = 1
+    happo_num_mini_batches: int = 16
+    happo_factor_chunk_size: int = 4096
+    happo_max_grad_norm: float = 0.05
+    happo_entropy_coef: float = 0.0
+    happo_init_noise_std: float = 0.25
+    happo_log_std_min: float = -2.995732273553991  # log(0.05)
+    happo_log_std_max: float = -1.0498221244986778  # log(0.35)
+    happo_action_clip: float = 0.4
+    happo_action_warmup_updates: int = 0
     happo_bad_heading_action_scale: float = 0.2
-    teacher_shaping_coef: float = 0.002
+    local_reward_shaping: bool = True
+    local_reward_centerline_coef: float = 0.35
+    local_reward_pair_lateral_coef: float = 0.55
+    local_reward_heading_coef: float = 0.15
+    local_reward_turn_coef: float = 0.005
+    local_reward_first_follower_centerline_scale: float = 1.0
+    local_reward_first_follower_pair_lateral_scale: float = 1.0
+    local_reward_first_follower_turn_scale: float = 1.0
+    local_reward_last_follower_centerline_scale: float = 1.0
+    local_reward_last_follower_pair_lateral_scale: float = 1.0
+    local_reward_last_follower_turn_scale: float = 1.0
+    teacher_shaping_coef: float = 0.001
     teacher_lr: float = 1.0e-4
     teacher_update_interval: int = 5
     teacher_shaping_clip: float = 0.03
-    teacher_action_penalty_coef: float = 0.01
+    teacher_action_penalty_coef: float = 0.0
 
-    # Attack profile (task-internal attacker preset): off|easy|medium|hard
-    attack_level: str = "medium"
+    # Attack profile (task-internal attacker preset): off|light|easy|medium|hard
+    attack_level: str = "off"
     attack_target_mode: str = "all"  # all|rel_pos|vel
     attack_seed: int = 3407
     attack_log_interval_updates: int = 20
@@ -61,10 +79,19 @@ class PlatoonAlgorithmCfg:
     attack_realism_coef: float = 0.10
     attack_generator_lr: float = 1.0e-4
     attack_discriminator_lr: float = 1.0e-4
-    attack_update_interval: int = 4
+    attack_update_interval: int = 32
+    attack_curriculum_warmup_updates: int = 2000
+    attack_curriculum_start_mode: str = "profile"
+    attack_decay_start_updates: int = 5000
+    attack_min_obj_scale: float = 0.25
+    attack_min_update_freq_scale: float = 0.25
+    attack_decay_half_life_updates: int = 2500
     attack_obj_coef: float = 1.2
-    attack_reward_proxy_coef: float = 1.0
+    attack_reward_proxy_coef: float = 1.0  # fallback score coefficient when physical context is unavailable
     attack_dos_proxy_coef: float = 0.3
+    max_fdi_pos: float = -1.0
+    max_fdi_acc: float = -1.0
+    max_dos_rate: float = -1.0
 
 
 @configclass

@@ -61,6 +61,9 @@ class TeacherModule:
     def shape_reward(self, obs: torch.Tensor, actions: torch.Tensor, rewards: torch.Tensor) -> torch.Tensor:
         return rewards
 
+    def get_physical_attack_context(self) -> dict[str, float]:
+        return {}
+
     def maybe_update(self, context: dict[str, Any]) -> dict[str, float] | None:
         return None
 
@@ -145,36 +148,39 @@ class PlatoonTrainingPipeline:
         return result
 
     def _compute_teacher_outer_score_j(self, batch: StepBatch) -> float:
-        """Compute Step-1 outer objective score J for teacher updates.
+        """Compute paper-aligned outer objective score J.
 
-        This is a first-order meta proxy (no second-order gradient):
-            J = reward_mean + forward_drive - no_backward_penalty - bad_done_rate
-
-        where:
-        - reward_mean: current shaped reward mean over env/agent dims
-        - forward_drive: positive forward command magnitude proxy
-        - no_backward_penalty: negative forward command magnitude proxy
-        - bad_done_rate: termination proxy (includes reset_on_bad_ori when present)
-
-        The teacher outer signal is then defined over windows:
-            delta_j = J_post - J_pre
+        This is the task-side bridge to the paper's global control objective.
+        It uses the shaped reward plus termination cost only; the detailed
+        physical-cost decomposition is supplied by the teacher context.
         """
         reward_mean = float(batch.rewards.mean().item())
-        forward_component = batch.actions[..., 0]
-        forward_drive = float(torch.relu(forward_component).mean().item())
-        no_backward_penalty = float(torch.relu(-forward_component).mean().item())
         bad_done_rate = float(batch.dones.float().mean().item())
-        return reward_mean + forward_drive - no_backward_penalty - bad_done_rate
+        return reward_mean - bad_done_rate
+
+    def _compute_teacher_physical_outer_score(self, batch: StepBatch, physical_context: dict[str, float]) -> float:
+        physical_cost = physical_context.get("physical_cost")
+        if physical_cost is None:
+            return self._compute_teacher_outer_score_j(batch)
+        bad_done_rate = float(batch.dones.float().mean().item())
+        collision_cost = float(physical_context.get("physical_collision_cost", 0.0))
+        # Paper global cost: J = E[mean_i c_i(t) + C_col I_col(t)].
+        # The teacher context already provides mean_i c_i(t)-compatible
+        # physical_cost, so do not double count its sub-terms here.
+        return -float(physical_cost) - collision_cost - bad_done_rate
 
     def process_transition(self, batch: StepBatch) -> dict[str, Any]:
         self.total_steps += 1
-        teacher_outer_j = self._compute_teacher_outer_score_j(batch)
+
+        physical_attack_context: dict[str, float] = {}
+        if self.flags.enable_teacher:
+            batch.rewards = self.teacher.shape_reward(batch.obs, batch.actions, batch.rewards)
+            physical_attack_context = self.teacher.get_physical_attack_context()
+
+        teacher_outer_j = self._compute_teacher_physical_outer_score(batch, physical_attack_context)
         if self._teacher_outer_j_pre is None:
             self._teacher_outer_j_pre = teacher_outer_j
         self._teacher_outer_j_latest = teacher_outer_j
-
-        if self.flags.enable_teacher:
-            batch.rewards = self.teacher.shape_reward(batch.obs, batch.actions, batch.rewards)
 
         self.student.observe(batch)
         update_info = self.student.maybe_update()
@@ -184,21 +190,14 @@ class PlatoonTrainingPipeline:
         if update_info is not None:
             self.student_updates += 1
             if self.flags.enable_attack and self.student_updates % max(self.schedule.attacker_every_student_updates, 1) == 0:
-                forward_component = batch.actions[..., 0]
                 rewards = batch.rewards
                 dones = batch.dones
                 attack_context = {
                     "student_updates": self.student_updates,
                     "reward_mean": float(rewards.mean().item()),
-                    "forward_drive": float(torch.relu(forward_component).mean().item()),
-                    "no_backward_penalty": float(torch.relu(-forward_component).mean().item()),
                     "bad_done_rate": float(dones.float().mean().item()),
-                    # lightweight physical proxies for CA-GAN conditioning
-                    "spacing_err_proxy": float(rewards.abs().mean().item()),
-                    "vel_err_proxy": float(torch.relu(forward_component.abs() - 0.5).mean().item()),
-                    "acc_proxy": float(torch.relu(batch.actions[..., 0].abs() - 0.2).mean().item()),
-                    "jerk_proxy": float(torch.relu(batch.actions.diff(dim=0).abs().mean() if batch.actions.shape[0] > 1 else torch.tensor(0.0, device=batch.actions.device)).item()),
                 }
+                attack_context.update(physical_attack_context)
                 atk_info = self.attacker.maybe_update(attack_context)
                 self.attacker_updates += 1
                 logs["attacker_update"] = atk_info

@@ -22,6 +22,8 @@ class HAPPOActorCfg:
     hidden_dims: tuple[int, ...] = (256, 256)
     activation: type[nn.Module] = nn.ELU
     init_noise_std: float = 1.0
+    log_std_min: float = -20.0
+    log_std_max: float = 2.0
     clip_param: float = 0.2
     ppo_epoch: int = 5
     actor_num_mini_batch: int = 4
@@ -37,6 +39,7 @@ class GaussianActorNet(nn.Module):
 
     def __init__(self, cfg: HAPPOActorCfg):
         super().__init__()
+        self.cfg = cfg
         layers: list[nn.Module] = []
         last_dim = cfg.obs_dim
         for hidden_dim in cfg.hidden_dims:
@@ -49,7 +52,19 @@ class GaussianActorNet(nn.Module):
 
     def distribution(self, obs: torch.Tensor) -> Independent:
         mean = self.mean_net(obs)
-        std = self.log_std.exp().expand_as(mean)
+        mean = torch.nan_to_num(mean, nan=0.0, posinf=1.0e3, neginf=-1.0e3)
+        safe_log_std = torch.nan_to_num(
+            self.log_std,
+            nan=0.0,
+            posinf=float(self.cfg.log_std_max),
+            neginf=float(self.cfg.log_std_min),
+        )
+        safe_log_std = torch.clamp(
+            safe_log_std,
+            min=float(self.cfg.log_std_min),
+            max=float(self.cfg.log_std_max),
+        )
+        std = torch.exp(safe_log_std).clamp_min(1.0e-6).expand_as(mean)
         return Independent(Normal(mean, std), 1)
 
     def forward(self, obs: torch.Tensor, deterministic: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
@@ -96,8 +111,14 @@ class HAPPOActor:
         # and disable inference mode before building the actor loss graph.
         with torch.inference_mode(False), torch.enable_grad():
             action_log_probs, dist_entropy = self.evaluate_actions(sample["obs"], sample["actions"])
+            if not torch.isfinite(action_log_probs).all() or not torch.isfinite(dist_entropy):
+                zero = torch.tensor(0.0, device=self.device)
+                one = torch.ones_like(old_action_log_probs)
+                return zero, zero, zero, one
             imp_weights = getattr(torch, self.cfg.action_aggregation)(
-                torch.exp(action_log_probs - old_action_log_probs), dim=-1, keepdim=True
+                torch.exp(torch.clamp(action_log_probs - old_action_log_probs, min=-20.0, max=20.0)),
+                dim=-1,
+                keepdim=True,
             )
             surr1 = imp_weights * adv_targ
             surr2 = torch.clamp(imp_weights, 1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param) * adv_targ
@@ -112,6 +133,8 @@ class HAPPOActor:
             (policy_loss - dist_entropy * self.cfg.entropy_coef).backward()
             grad_norm = nn.utils.clip_grad_norm_(self.actor.parameters(), self.cfg.max_grad_norm)
             self.optimizer.step()
+            with torch.no_grad():
+                self.actor.log_std.clamp_(min=float(self.cfg.log_std_min), max=float(self.cfg.log_std_max))
         return policy_loss, dist_entropy, grad_norm, imp_weights.detach()
 
     def train_on_buffer(self, buffer, advantages: torch.Tensor, agent_id: int, factor: torch.Tensor) -> dict[str, float]:

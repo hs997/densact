@@ -107,6 +107,8 @@ from isaaclab.utils.dict import print_dict
 from isaaclab.utils.io import dump_yaml
 from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper
 
+from marl_platoon.utils.best_checkpoint import BestCheckpointState, maybe_save_best_checkpoint
+
 # paper modules
 from marl_platoon.tasks.platoon.attacks import sample_hybrid_attack
 from marl_platoon.tasks.platoon.teacher import RewardTeacher as PaperRewardTeacher
@@ -122,6 +124,53 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
+
+
+def _find_happo_wrapper(env):
+    """Find the task-local HAPPO gym wrapper under RSL/video wrappers."""
+    current = env
+    visited = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if all(hasattr(current, name) for name in ("state_dict", "load_state_dict", "set_inference_mode")):
+            if hasattr(current, "algorithm_router"):
+                return current
+        current = getattr(current, "env", None)
+    return None
+
+
+def _attach_happo_state_to_checkpoint(env, checkpoint_path: str) -> None:
+    """Augment an RSL-RL checkpoint with task-local HAPPO weights when present."""
+    happo_wrapper = _find_happo_wrapper(env)
+    if happo_wrapper is None:
+        return
+    happo_state = happo_wrapper.state_dict()
+    if not happo_state:
+        return
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    if not isinstance(checkpoint, dict):
+        print(f"[WARN] Cannot attach HAPPO state to non-dict checkpoint: {checkpoint_path}")
+        return
+    checkpoint["platoon_happo_state"] = happo_state
+    torch.save(checkpoint, checkpoint_path)
+    print(f"[INFO]: Attached task-local HAPPO state to: {checkpoint_path}")
+
+
+def _load_happo_state_from_checkpoint(env, checkpoint_path: str) -> None:
+    """Restore task-local HAPPO weights from an augmented RSL-RL checkpoint."""
+    happo_wrapper = _find_happo_wrapper(env)
+    if happo_wrapper is None:
+        return
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    if not isinstance(checkpoint, dict):
+        print(f"[WARN] Cannot load HAPPO state from non-dict checkpoint: {checkpoint_path}")
+        return
+    happo_state = checkpoint.get("platoon_happo_state")
+    if not happo_state:
+        print(f"[WARN] Checkpoint has no task-local HAPPO state: {checkpoint_path}")
+        return
+    happo_wrapper.load_state_dict(happo_state, strict=True)
+    print(f"[INFO]: Loaded task-local HAPPO state from: {checkpoint_path}")
 
 # ============================================================
 # ✅ Reward Teacher 配置（可开关）
@@ -283,7 +332,8 @@ class TeacherRewardVecWrapper:
         if actions.shape[-1] != self.act_dim:
             raise RuntimeError(f"[Teacher] actions dim wrong: {tuple(actions.shape)} expected (*,{self.act_dim})")
 
-        # paper-style hybrid attack metadata (placeholder CA-GAN interface)
+        # Legacy non-HAPPO wrapper attack metadata. HAPPO/MGRS tasks use the
+        # task-local CA-GAN attacker instead of this wrapper path.
         if getattr(self.attack_cfg, "enable_attack", False):
             beta_a, beta_p, f_a, f_p = sample_hybrid_attack(
                 num_envs=int(self.num_envs),
@@ -448,8 +498,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # wrap env for rsl-rl
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 
+    algorithm_cfg = getattr(env_cfg, "algorithm", None)
+    task_local_teacher = (
+        str(getattr(algorithm_cfg, "algorithm", "")).lower() == "happo"
+        and bool(getattr(algorithm_cfg, "enable_teacher", False))
+    )
+
     # ✅ insert teacher wrapper (infer obs_dim from REAL reset output, not from spaces)
-    if TEACHER_ENABLED:
+    # HAPPO platoon tasks use the task-local MGRS Teacher.  Wrapping here as well
+    # would create a second, unrelated reward-teacher path for the frozen outer PPO.
+    if TEACHER_ENABLED and not task_local_teacher:
         device = torch.device(str(agent_cfg.device))
         reset_out = env.reset()
         pol0 = extract_policy_obs_tensor(reset_out, int(env.num_envs), device)
@@ -470,6 +528,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             attack_cfg=getattr(env_cfg, "attack", PlatoonEnvCfg.AttackCfg()),
         )
         print(f"[INFO] RewardTeacher enabled. obs_dim={obs_dim}, act_dim={act_dim}, device={device}")
+    elif TEACHER_ENABLED and task_local_teacher:
+        print("[INFO] RewardTeacher wrapper skipped: task-local HAPPO/MGRS teacher is enabled.")
 
     # runner
     if agent_cfg.class_name == "OnPolicyRunner":
@@ -481,14 +541,37 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     runner.add_git_repo_to_log(__file__)
 
+    original_save = runner.save
+
+    def save_with_happo_state(path: str, *args, **kwargs):
+        result = original_save(path, *args, **kwargs)
+        _attach_happo_state_to_checkpoint(env, path)
+        return result
+
+    runner.save = save_with_happo_state
+
+    best_state = BestCheckpointState()
+    original_log = runner.log
+
+    def log_and_save_best(locs: dict, width: int = 80, pad: int = 35):
+        original_log(locs, width=width, pad=pad)
+        maybe_save_best_checkpoint(runner, locs, best_state)
+
+    runner.log = log_and_save_best
+
     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         runner.load(resume_path)
+        _load_happo_state_from_checkpoint(env, resume_path)
 
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
 
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+
+    final_checkpoint_path = os.path.join(log_dir, "model_final.pt")
+    runner.save(final_checkpoint_path)
+    print(f"[INFO]: Saved final model checkpoint to: {final_checkpoint_path}")
 
     print(f"Training time: {round(time.time() - start_time, 2)} seconds")
     env.close()

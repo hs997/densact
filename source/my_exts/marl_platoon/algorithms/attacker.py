@@ -30,8 +30,15 @@ class AttackModuleCfg:
     discriminator_lr: float = 1.0e-4
     update_interval: int = 4
     attack_obj_coef: float = 1.0
-    reward_proxy_coef: float = 1.0
+    reward_proxy_coef: float = 1.0  # fallback only when no clean physical context is available
     dos_proxy_coef: float = 0.3
+    attack_objective_clip: float = 20.0
+    curriculum_warmup_updates: int = 2000
+    curriculum_start_mode: str = "profile"
+    decay_start_updates: int = 5000
+    min_attack_obj_scale: float = 0.25
+    min_update_freq_scale: float = 0.25
+    decay_half_life_updates: int = 2500
 
 
 class AttackGenerator(nn.Module):
@@ -189,8 +196,8 @@ class ReferenceAttackLibrary:
         acc_max = min(float(acc_cfg.get("max", 0.0)), self.cfg.max_fdi_acc)
         sign_p = torch.sign(torch.randn_like(obs))
         sign_a = torch.sign(torch.randn_like(f_a))
-        f_p = 0.02 * pos_max * sign_p
-        f_a = 0.02 * acc_max * sign_a
+        f_p = pos_max * sign_p
+        f_a = acc_max * sign_a
         noise_std = float(fdi_cfg.get("noise_std", 0.0))
         if noise_std > 0.0:
             f_p = f_p + noise_std * torch.randn_like(obs)
@@ -209,7 +216,7 @@ class ReferenceAttackLibrary:
 
 
 class NoOpAttackModule(AttackerModule):
-    """Placeholder attacker that preserves interfaces without perturbing data."""
+    """Disabled attacker that preserves the training-pipeline interface."""
 
     def __init__(self, cfg: AttackModuleCfg | None = None):
         self.cfg = cfg or AttackModuleCfg(enabled=False)
@@ -218,46 +225,7 @@ class NoOpAttackModule(AttackerModule):
         return obs
 
     def perturb_action(self, actions: torch.Tensor) -> torch.Tensor:
-        if not self.cfg.enabled:
-            return actions
-        out = actions.clone()
-        # Control-channel FDI (approximate using max_fdi_acc budget).
-        if out.is_cuda:
-            eps = torch.empty_like(out).uniform_(-self.cfg.max_fdi_acc, self.cfg.max_fdi_acc)
-        else:
-            eps = torch.empty_like(out).uniform_(
-                -self.cfg.max_fdi_acc,
-                self.cfg.max_fdi_acc,
-                generator=self._generator_cpu,
-            )
-        fdi_u = 0.02 * eps
-        out = out + fdi_u
-
-        # Control-channel DoS with ZOH hold (u_hold).
-        if self.cfg.max_dos_rate > 0.0:
-            # Enforce action-channel DoS budget exactly per batch to avoid
-            # small-sample Bernoulli spikes above max_dos_rate.
-            flat_n = out.numel()
-            k = int(self.cfg.max_dos_rate * flat_n)
-            if k > 0:
-                rand_flat = torch.rand(flat_n, device=out.device)
-                topk_idx = torch.topk(rand_flat, k=k, largest=False).indices
-                drop_mask = torch.zeros(flat_n, device=out.device, dtype=torch.bool)
-                drop_mask[topk_idx] = True
-                drop_mask = drop_mask.view_as(out)
-            else:
-                drop_mask = torch.zeros_like(out, dtype=torch.bool)
-        else:
-            drop_mask = torch.zeros_like(out, dtype=torch.bool)
-        if self._last_valid_action is None or self._last_valid_action.shape != out.shape:
-            self._last_valid_action = actions.detach().clone()
-        out = torch.where(drop_mask, self._last_valid_action.to(out.device), out)
-        self._last_valid_action = torch.where(drop_mask, self._last_valid_action.to(out.device), out).detach().clone()
-        self.last_act_fdi_mean = float(fdi_u.abs().mean().item())
-        self.last_act_dos_rate = float(drop_mask.float().mean().item())
-        self.last_fdi_mean = 0.5 * (self.last_obs_fdi_mean + self.last_act_fdi_mean)
-        self.last_dos_rate = 0.5 * (self.last_obs_dos_rate + self.last_act_dos_rate)
-        return out
+        return actions
 
     def maybe_update(self, context: dict[str, Any]) -> dict[str, float] | None:
         return {"attack_enabled": float(self.cfg.enabled)}
@@ -269,7 +237,7 @@ class RandomFDIDoSAttackModule(AttackerModule):
     Modes:
     - profile: previous bounded random FDI/DoS baseline.
     - generator: state-conditioned G(z, s) attack generation without GAN updates.
-    - cagan: skeleton with G, D, reference templates, and realism update hooks.
+    - cagan: state-conditioned CA-GAN update with realism regularization.
     """
 
     def __init__(self, cfg: AttackModuleCfg | None = None):
@@ -304,8 +272,8 @@ class RandomFDIDoSAttackModule(AttackerModule):
         self._cached_beta_p: torch.Tensor | None = None
         self._cached_f_a: torch.Tensor | None = None
         self._cached_beta_a: torch.Tensor | None = None
-        self._cached_reward_proxy: float = 0.0
-        self._cached_attack_obj_proxy: float = 0.0
+        self._cached_fallback_disruption_score: float = 0.0
+        self._cached_attack_objective: float = 0.0
         self._pending_f_a: torch.Tensor | None = None
         self._pending_beta_a: torch.Tensor | None = None
         self._last_valid_obs: torch.Tensor | None = None
@@ -329,15 +297,44 @@ class RandomFDIDoSAttackModule(AttackerModule):
         self.generator_optimizer: torch.optim.Optimizer | None = None
         self.discriminator_optimizer: torch.optim.Optimizer | None = None
         self.sequence_discriminator_optimizer: torch.optim.Optimizer | None = None
+        self._runtime_mode = str(self.cfg.mode).lower()
+
+    def _get_runtime_mode(self, student_updates: int | None = None) -> str:
+        progress_updates = self._updates if student_updates is None else student_updates
+        if self.cfg.curriculum_warmup_updates > 0 and progress_updates < self.cfg.curriculum_warmup_updates:
+            return str(self.cfg.curriculum_start_mode).lower()
+        return str(self.cfg.mode).lower()
+
+    def _get_late_stage_attack_scale(self, student_updates: int) -> float:
+        if self.cfg.decay_start_updates <= 0 or student_updates <= self.cfg.decay_start_updates:
+            return 1.0
+        half_life = max(float(self.cfg.decay_half_life_updates), 1.0)
+        decay_steps = float(student_updates - self.cfg.decay_start_updates)
+        scale = 0.5 ** (decay_steps / half_life)
+        return float(max(self.cfg.min_attack_obj_scale, min(1.0, scale)))
+
+    def _get_late_stage_update_interval(self, student_updates: int) -> int:
+        if self.cfg.decay_start_updates <= 0 or student_updates <= self.cfg.decay_start_updates:
+            return max(self.cfg.update_interval, 1)
+        half_life = max(float(self.cfg.decay_half_life_updates), 1.0)
+        decay_steps = float(student_updates - self.cfg.decay_start_updates)
+        freq_scale = 0.5 ** (decay_steps / half_life)
+        freq_scale = max(self.cfg.min_update_freq_scale, min(1.0, freq_scale))
+        return max(int(round(max(self.cfg.update_interval, 1) / freq_scale)), 1)
 
     def _build_target_mask(self, obs: torch.Tensor) -> torch.Tensor:
         mode = str(self.cfg.target_mode).lower()
         mask = torch.ones_like(obs, dtype=torch.bool)
         if mode == "all":
             return mask
-        # platoon policy obs layout: rel_pos_chain(12) + last_vel(3) + last_ang_vel(3)
-        rel_pos_end = min(12, obs.shape[-1])
-        vel_end = min(18, obs.shape[-1])
+        # Local platoon obs layout: [rel_x, rel_y, rel_vx, rel_vy, own_vx, own_vy, yaw_rate, role_id].
+        # Older global-chain layouts are still handled by the fallback split.
+        if obs.shape[-1] <= 10:
+            rel_pos_end = min(4, obs.shape[-1])
+            vel_end = min(6, obs.shape[-1])
+        else:
+            rel_pos_end = max(obs.shape[-1] - 6, 0)
+            vel_end = max(obs.shape[-1] - 3, rel_pos_end)
         if mode == "rel_pos":
             mask[:] = False
             mask[..., :rel_pos_end] = True
@@ -378,12 +375,12 @@ class RandomFDIDoSAttackModule(AttackerModule):
         noise = torch.randn(flat_obs.shape[0], self.cfg.noise_dim, device=obs.device)
         assert self.generator is not None
         f_p_raw, beta_p_logits, f_a_raw, beta_a_logits = self.generator(flat_obs, noise)
-        f_p = (0.02 * self.cfg.max_fdi_pos * f_p_raw).view_as(obs)
+        f_p = (self.cfg.max_fdi_pos * f_p_raw).view_as(obs)
         p_drop = torch.sigmoid(beta_p_logits).view_as(obs) * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
         beta_p = 1.0 - (torch.rand_like(obs) < p_drop).float()
         f_p = torch.where(target_mask, f_p * beta_p, torch.zeros_like(f_p))
         beta_p = torch.where(target_mask, beta_p, torch.ones_like(beta_p))
-        self._pending_f_a = 0.02 * self.cfg.max_fdi_acc * f_a_raw.detach()
+        self._pending_f_a = self.cfg.max_fdi_acc * f_a_raw.detach()
         p_drop_a = torch.sigmoid(beta_a_logits).detach() * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
         self._pending_beta_a = 1.0 - (torch.rand_like(p_drop_a) < p_drop_a).float()
         self._pending_f_a = self._pending_f_a * self._pending_beta_a
@@ -394,7 +391,8 @@ class RandomFDIDoSAttackModule(AttackerModule):
             return obs
         out = obs.clone()
         target_mask = self._build_target_mask(out)
-        mode = str(self.cfg.mode).lower()
+        mode = self._get_runtime_mode()
+        self._runtime_mode = mode
 
         if mode in {"generator", "cagan"}:
             f_p, beta_p, pending_f_a, pending_beta_a = self._sample_generator_attack(out, target_mask)
@@ -453,49 +451,76 @@ class RandomFDIDoSAttackModule(AttackerModule):
         self._cached_obs = obs.detach().clone()
         self._cached_fdi = fdi_noise.detach().clone()
         self._cached_dos = drop_mask.float().detach().clone()
+        self._cached_f_p = fdi_noise.detach().clone()
+        self._cached_beta_p = (~drop_mask).float().detach().clone()
+        action_dim = int(self.generator.action_dim) if self.generator is not None else 4
+        action_shape = (*obs.shape[:-1], action_dim)
+        if self._pending_f_a is not None and self._pending_f_a.numel() == int(torch.tensor(action_shape).prod().item()):
+            f_a = self._pending_f_a.to(obs.device, dtype=obs.dtype).view(action_shape)
+            beta_a = self._pending_beta_a.to(obs.device, dtype=obs.dtype).view(action_shape)
+        else:
+            f_a = torch.zeros(action_shape, device=obs.device, dtype=obs.dtype)
+            beta_a = torch.ones_like(f_a)
+        self._cached_f_a = f_a.detach().clone()
+        self._cached_beta_a = beta_a.detach().clone()
         self._seq_obs.append(self._cached_obs)
-        self._seq_fdi.append(self._cached_fdi)
-        self._seq_dos.append(self._cached_dos)
+        self._seq_f_p.append(self._cached_f_p)
+        self._seq_beta_p.append(self._cached_beta_p)
+        self._seq_f_a.append(self._cached_f_a)
+        self._seq_beta_a.append(self._cached_beta_a)
         if len(self._seq_obs) > self.seq_window:
             self._seq_obs = self._seq_obs[-self.seq_window:]
-            self._seq_fdi = self._seq_fdi[-self.seq_window:]
-            self._seq_dos = self._seq_dos[-self.seq_window:]
-        # Attack objective proxy (higher is stronger disruption):
-        # larger perturbation magnitude and higher DoS utilization.
-        self._cached_reward_proxy = float(
-            self.cfg.reward_proxy_coef * fdi_noise.abs().mean().item()
-            + self.cfg.dos_proxy_coef * drop_mask.float().mean().item()
-        )
+            self._seq_f_p = self._seq_f_p[-self.seq_window:]
+            self._seq_beta_p = self._seq_beta_p[-self.seq_window:]
+            self._seq_f_a = self._seq_f_a[-self.seq_window:]
+            self._seq_beta_a = self._seq_beta_a[-self.seq_window:]
         return out
 
     def perturb_action(self, actions: torch.Tensor) -> torch.Tensor:
         if not self.cfg.enabled:
             return actions
         out = actions.clone()
-        if out.is_cuda:
-            eps = torch.empty_like(out).uniform_(-self.cfg.max_fdi_acc, self.cfg.max_fdi_acc)
+        mode = self._get_runtime_mode()
+        self._runtime_mode = mode
+        if mode in {"generator", "cagan"} and self._pending_f_a is not None and self._pending_beta_a is not None:
+            fdi_u = self._pending_f_a.to(out.device, dtype=out.dtype).view_as(out)
+            beta_a = self._pending_beta_a.to(out.device, dtype=out.dtype).view_as(out)
+            drop_mask = beta_a <= 0.5
         else:
-            eps = torch.empty_like(out).uniform_(
-                -self.cfg.max_fdi_acc,
-                self.cfg.max_fdi_acc,
-                generator=self._generator_cpu,
-            )
-        fdi_u = 0.02 * eps
-        out = out + fdi_u
+            if out.is_cuda:
+                fdi_u = torch.empty_like(out).uniform_(-self.cfg.max_fdi_acc, self.cfg.max_fdi_acc)
+            else:
+                fdi_u = torch.empty_like(out).uniform_(
+                    -self.cfg.max_fdi_acc,
+                    self.cfg.max_fdi_acc,
+                    generator=self._generator_cpu,
+                )
+            if self.cfg.max_dos_rate > 0.0:
+                rand_mask = torch.rand(out.shape, device=out.device)
+                drop_mask = rand_mask < self.cfg.max_dos_rate
+            else:
+                drop_mask = torch.zeros_like(out, dtype=torch.bool)
 
         if self.cfg.max_dos_rate > 0.0:
             flat_n = out.numel()
             k = int(self.cfg.max_dos_rate * flat_n)
-            if k > 0:
-                rand_flat = torch.rand(flat_n, device=out.device)
-                topk_idx = torch.topk(rand_flat, k=k, largest=False).indices
-                drop_mask = torch.zeros(flat_n, device=out.device, dtype=torch.bool)
-                drop_mask[topk_idx] = True
-                drop_mask = drop_mask.view_as(out)
-            else:
+            if k <= 0:
                 drop_mask = torch.zeros_like(out, dtype=torch.bool)
+            else:
+                flat_drop = drop_mask.reshape(-1)
+                if int(flat_drop.sum().item()) > k:
+                    priorities = torch.rand(flat_n, device=out.device)
+                    priorities = torch.where(flat_drop, priorities, torch.ones_like(priorities) + 1.0)
+                    topk_idx = torch.topk(priorities, k=k, largest=False).indices
+                    limited = torch.zeros(flat_n, device=out.device, dtype=torch.bool)
+                    limited[topk_idx] = True
+                    drop_mask = limited.view_as(out)
         else:
             drop_mask = torch.zeros_like(out, dtype=torch.bool)
+
+        fdi_u = torch.clamp(fdi_u, -self.cfg.max_fdi_acc, self.cfg.max_fdi_acc)
+        fdi_u = fdi_u * (~drop_mask).to(dtype=out.dtype)
+        out = out + fdi_u
 
         if self._last_valid_action is None or self._last_valid_action.shape != out.shape:
             self._last_valid_action = actions.detach().clone()
@@ -504,6 +529,7 @@ class RandomFDIDoSAttackModule(AttackerModule):
 
         self.last_act_fdi_mean = float(fdi_u.abs().mean().item())
         self.last_act_dos_rate = float(drop_mask.float().mean().item())
+        self.last_beta_a = 1.0 - self.last_act_dos_rate
         self.last_act_drop_count = float(drop_mask.sum().item())
         self.last_act_elem_n = float(drop_mask.numel())
         self.last_act_dos_budget = float(self.cfg.max_dos_rate)
@@ -514,35 +540,36 @@ class RandomFDIDoSAttackModule(AttackerModule):
 
     def maybe_update(self, context: dict[str, Any]) -> dict[str, float] | None:
         self._updates += 1
-        # Step-3 physical attack proxy (paper-aligned direction):
-        # maximize defender degradation under realism regularization.
-        reward_mean = float(context.get("reward_mean", 0.0))
-        forward_drive = float(context.get("forward_drive", 0.0))
-        no_backward_penalty = float(context.get("no_backward_penalty", 0.0))
+        # Paper objective direction: maximize clean physical degradation while
+        # penalizing attack energy and DoS use for realism/stealthiness.
         bad_done_rate = float(context.get("bad_done_rate", 0.0))
-        spacing_err_proxy = float(context.get("spacing_err_proxy", 0.0))
-        vel_err_proxy = float(context.get("vel_err_proxy", 0.0))
-        acc_proxy = float(context.get("acc_proxy", 0.0))
-        jerk_proxy = float(context.get("jerk_proxy", 0.0))
-        energy_proxy = abs(self.last_obs_fdi_mean) + abs(self.last_act_fdi_mean)
-        self.last_obj_spacing = spacing_err_proxy
-        self.last_obj_vel = vel_err_proxy
-        self.last_obj_acc = acc_proxy
-        self.last_obj_jerk = jerk_proxy
+        physical_cost = float(context.get("physical_cost", 0.0))
+        spacing_cost = float(context.get("physical_spacing_cost", 0.0))
+        velocity_cost = float(context.get("physical_velocity_cost", 0.0))
+        acceleration_cost = float(context.get("physical_acceleration_cost", 0.0))
+        jerk_cost = float(context.get("physical_jerk_cost", 0.0))
+        overspeed_cost = float(context.get("physical_overspeed_cost", 0.0))
+        collision_cost = float(context.get("physical_collision_cost", 0.0))
+        l_adv_fdi = abs(self.last_obs_fdi_mean) + abs(self.last_act_fdi_mean)
+        l_adv_dos = abs(self.last_obs_dos_rate) + abs(self.last_act_dos_rate)
+        self.last_obj_spacing = spacing_cost
+        self.last_obj_vel = velocity_cost
+        self.last_obj_acc = acceleration_cost
+        self.last_obj_jerk = jerk_cost
         self.last_obj_bad_done = bad_done_rate
-        self.last_obj_energy = energy_proxy
-        self._cached_attack_obj_proxy = (
-            spacing_err_proxy
-            + vel_err_proxy
-            + acc_proxy
-            + jerk_proxy
-            + bad_done_rate
-            - energy_proxy
+        self.last_obj_energy = l_adv_fdi + l_adv_dos
+        raw_attack_objective = physical_cost + collision_cost + bad_done_rate - l_adv_fdi - l_adv_dos
+        self._cached_attack_objective = float(
+            max(min(raw_attack_objective, self.cfg.attack_objective_clip), -self.cfg.attack_objective_clip)
         )
 
-        mode = str(self.cfg.mode).lower()
-        if self.cfg.enabled and mode == "cagan" and self._updates % max(self.cfg.update_interval, 1) == 0:
-            self._update_cagan_skeleton(context)
+        student_updates = int(context.get("student_updates", self._updates))
+        mode = self._get_runtime_mode(student_updates)
+        self._runtime_mode = mode
+        attack_obj_scale = self._get_late_stage_attack_scale(student_updates)
+        update_interval = self._get_late_stage_update_interval(student_updates)
+        if self.cfg.enabled and mode == "cagan" and self._updates % update_interval == 0:
+            self._update_cagan(context, attack_obj_scale=attack_obj_scale)
 
         expected_act_dos = (self.last_act_drop_count / self.last_act_elem_n) if self.last_act_elem_n > 0 else 0.0
         self.last_stats_inconsistent = float(abs(self.last_act_dos_rate - expected_act_dos) > 1.0e-6)
@@ -550,12 +577,18 @@ class RandomFDIDoSAttackModule(AttackerModule):
             (abs(self.last_obj_spacing)
              + abs(self.last_obj_vel)
              + abs(self.last_obj_acc)
-             + abs(self.last_obj_jerk))
-            / 4.0
+             + abs(self.last_obj_jerk)
+             + abs(overspeed_cost)
+             + abs(collision_cost))
+            / 6.0
         )
         return {
             "attack_enabled": float(self.cfg.enabled),
             "attack_mode": mode,
+            "attack_target_mode_cfg": str(self.cfg.mode).lower(),
+            "attack_curriculum_warmup_updates": float(self.cfg.curriculum_warmup_updates),
+            "attack_late_obj_scale": attack_obj_scale,
+            "attack_late_update_interval": float(update_interval),
             "fdi_abs_mean": self.last_fdi_mean,
             "dos_rate": self.last_dos_rate,
             "obs_fdi_abs_mean": self.last_obs_fdi_mean,
@@ -575,21 +608,30 @@ class RandomFDIDoSAttackModule(AttackerModule):
             "attack_d_loss": self.last_d_loss,
             "attack_realism_loss": self.last_realism_loss,
             "attack_seq_realism_loss": self.last_seq_realism_loss,
-            "attack_obj_proxy": self.last_attack_obj,
+            "attack_objective": self.last_attack_obj,
             "obj_spacing": self.last_obj_spacing,
             "obj_vel": self.last_obj_vel,
             "obj_acc": self.last_obj_acc,
             "obj_jerk": self.last_obj_jerk,
             "obj_bad_done": self.last_obj_bad_done,
             "obj_energy": self.last_obj_energy,
+            "obj_physical_cost": physical_cost,
+            "obj_overspeed": overspeed_cost,
+            "obj_collision": collision_cost,
             "attack_phy_ctx_norm": phy_ctx_norm,
             "attack_cond_dim": 4.0,
             "attack_ref_template_id": self.last_ref_template_id,
             "attack_unique_ref_tpl_count": self.last_unique_ref_tpl_count,
         }
 
-    def _update_cagan_skeleton(self, context: dict[str, Any]) -> None:
-        if self._cached_obs is None or self._cached_fdi is None or self._cached_dos is None:
+    def _update_cagan(self, context: dict[str, Any], attack_obj_scale: float = 1.0) -> None:
+        if (
+            self._cached_obs is None
+            or self._cached_f_p is None
+            or self._cached_beta_p is None
+            or self._cached_f_a is None
+            or self._cached_beta_a is None
+        ):
             return
         self._ensure_neural_modules(self._cached_obs.device)
         assert self.discriminator is not None
@@ -598,17 +640,14 @@ class RandomFDIDoSAttackModule(AttackerModule):
         assert self.sequence_discriminator_optimizer is not None
         # Convert possible inference tensors (from env step path) into fresh
         # regular tensors before autograd-enabled discriminator updates.
-        obs = torch.tensor(self._cached_obs, device=self._cached_obs.device, dtype=self._cached_obs.dtype).reshape(
-            -1, self._cached_obs.shape[-1]
-        )
-        fake_fdi = torch.tensor(
-            self._cached_fdi, device=self._cached_fdi.device, dtype=self._cached_fdi.dtype
-        ).reshape(-1, self._cached_fdi.shape[-1])
-        fake_dos = torch.tensor(
-            self._cached_dos, device=self._cached_dos.device, dtype=self._cached_dos.dtype
-        ).reshape(-1, self._cached_dos.shape[-1])
-        real_fdi, real_dos, ref_template_id = self.reference_library.sample(
+        obs = self._cached_obs.detach().clone().reshape(-1, self._cached_obs.shape[-1])
+        fake_f_p = self._cached_f_p.detach().clone().reshape(-1, self._cached_f_p.shape[-1])
+        fake_beta_p = self._cached_beta_p.detach().clone().reshape(-1, self._cached_beta_p.shape[-1])
+        fake_f_a = self._cached_f_a.detach().clone().reshape(-1, self._cached_f_a.shape[-1])
+        fake_beta_a = self._cached_beta_a.detach().clone().reshape(-1, self._cached_beta_a.shape[-1])
+        real_f_p, real_beta_p, real_f_a, real_beta_a, ref_template_id = self.reference_library.sample(
             obs,
+            action_dim=fake_f_a.shape[-1],
             context=context,
             recent_ids=self._recent_ref_templates[-3:],
         )
@@ -618,47 +657,47 @@ class RandomFDIDoSAttackModule(AttackerModule):
             self._recent_ref_templates = self._recent_ref_templates[-64:]
         self.last_unique_ref_tpl_count = float(len(set(self._recent_ref_templates[-20:])))
 
-        real_logits = self.discriminator(obs, real_fdi, real_dos)
-        fake_logits = self.discriminator(obs, fake_fdi.detach(), fake_dos.detach())
+        real_logits = self.discriminator(obs, real_f_p, real_beta_p, real_f_a, real_beta_a)
+        fake_logits = self.discriminator(
+            obs, fake_f_p.detach(), fake_beta_p.detach(), fake_f_a.detach(), fake_beta_a.detach()
+        )
         d_loss = torch.nn.functional.softplus(-real_logits).mean() + torch.nn.functional.softplus(fake_logits).mean()
         self.discriminator_optimizer.zero_grad()
         d_loss.backward()
         self.discriminator_optimizer.step()
         self.last_d_loss = float(d_loss.item())
 
-        # Step-3 generator objective:
-        # Re-sample differentiable attacks from G so the physical attack proxy
-        # modulates gradients on the generator output instead of only changing
-        # the scalar loss value. The sampled DoS is non-differentiable during
-        # environment rollout, so generator training uses dos probability.
+        # Generator objective:
+        # Re-sample differentiable attacks from G so the clean physical attack
+        # objective modulates gradients on the generator output. The sampled DoS
+        # is non-differentiable during environment rollout, so generator training
+        # uses its dropout probability.
         assert self.generator is not None
         assert self.generator_optimizer is not None
         noise = torch.randn(obs.shape[0], self.cfg.noise_dim, device=obs.device)
-        fdi_raw_g, dos_logits_g = self.generator(obs, noise)
-        fdi_g = 0.02 * self.cfg.max_fdi_pos * fdi_raw_g
-        dos_prob_g = torch.sigmoid(dos_logits_g) * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
-        fake_logits_for_g = self.discriminator(obs, fdi_g, dos_prob_g)
+        f_p_raw_g, beta_p_logits_g, f_a_raw_g, beta_a_logits_g = self.generator(obs, noise)
+        f_p_g = self.cfg.max_fdi_pos * f_p_raw_g
+        f_a_g = self.cfg.max_fdi_acc * f_a_raw_g
+        p_drop_g = torch.sigmoid(beta_p_logits_g) * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
+        p_drop_a_g = torch.sigmoid(beta_a_logits_g) * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
+        beta_p_g = 1.0 - p_drop_g
+        beta_a_g = 1.0 - p_drop_a_g
+        fake_logits_for_g = self.discriminator(obs, f_p_g, beta_p_g, f_a_g, beta_a_g)
         realism_loss = torch.nn.functional.softplus(-fake_logits_for_g).mean()
-        attack_obj = torch.tensor(self._cached_attack_obj_proxy, device=obs.device)
-        differentiable_attack_strength = (
-            self.cfg.reward_proxy_coef * fdi_g.abs().mean()
-            + self.cfg.dos_proxy_coef * dos_prob_g.mean()
+        attack_obj = torch.tensor(self._cached_attack_objective, device=obs.device)
+        # Paper-aligned generator objective:
+        # maximize J(theta_C, theta_G) - lambda_real * L_real.
+        # Since the simulator is not differentiable through the rollout, the
+        # clean physical attack objective is used as the rollout-level scalar
+        # weight for the generator's differentiable attack distribution.
+        expected_attack_cost = (
+            f_p_g.abs().mean()
+            + f_a_g.abs().mean()
+            + p_drop_g.mean()
+            + p_drop_a_g.mean()
         )
-        # Step-8: policy-gradient-style attacker update.
-        # We use a score-function surrogate for the discrete DoS pathway and
-        # keep the FDI branch differentiable. This is still an engineering
-        # proxy, but it is closer to the paper's attacker policy optimization
-        # than pure deterministic loss shaping.
-        dos_log_prob = torch.nn.functional.binary_cross_entropy_with_logits(
-            dos_logits_g, (dos_prob_g > 0.5).float(), reduction="none"
-        )
-        dos_policy_loss = (attack_obj.detach() * dos_log_prob).mean()
-        fdi_policy_loss = -attack_obj.detach() * fdi_g.abs().mean()
-        g_loss = (
-            self.cfg.attack_obj_coef * (dos_policy_loss + fdi_policy_loss)
-            + self.cfg.realism_coef * realism_loss
-            - 0.1 * differentiable_attack_strength
-        )
+        effective_attack_obj_coef = self.cfg.attack_obj_coef * float(attack_obj_scale)
+        g_loss = -effective_attack_obj_coef * attack_obj.detach() * expected_attack_cost + self.cfg.realism_coef * realism_loss
         self.generator_optimizer.zero_grad()
         g_loss.backward()
         self.generator_optimizer.step()
@@ -666,13 +705,17 @@ class RandomFDIDoSAttackModule(AttackerModule):
         seq_realism_loss = torch.tensor(0.0, device=obs.device)
         if len(self._seq_obs) >= self.seq_window:
             obs_seq = torch.cat(self._seq_obs[-self.seq_window:], dim=0)
-            fdi_seq = torch.cat(self._seq_fdi[-self.seq_window:], dim=0)
-            dos_seq = torch.cat(self._seq_dos[-self.seq_window:], dim=0)
+            f_p_seq = torch.cat(self._seq_f_p[-self.seq_window:], dim=0)
+            beta_p_seq = torch.cat(self._seq_beta_p[-self.seq_window:], dim=0)
+            f_a_seq = torch.cat(self._seq_f_a[-self.seq_window:], dim=0)
+            beta_a_seq = torch.cat(self._seq_beta_a[-self.seq_window:], dim=0)
             if obs_seq.dim() == 2:
                 obs_seq = obs_seq.unsqueeze(0)
-                fdi_seq = fdi_seq.unsqueeze(0)
-                dos_seq = dos_seq.unsqueeze(0)
-            seq_fake_logits = self.sequence_discriminator(obs_seq, fdi_seq, dos_seq)
+                f_p_seq = f_p_seq.unsqueeze(0)
+                beta_p_seq = beta_p_seq.unsqueeze(0)
+                f_a_seq = f_a_seq.unsqueeze(0)
+                beta_a_seq = beta_a_seq.unsqueeze(0)
+            seq_fake_logits = self.sequence_discriminator(obs_seq, f_p_seq, beta_p_seq, f_a_seq, beta_a_seq)
             seq_realism_loss = torch.nn.functional.softplus(-seq_fake_logits).mean()
             self.sequence_discriminator_optimizer.zero_grad()
             seq_realism_loss.backward()

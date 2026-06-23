@@ -3,10 +3,10 @@ import torch.nn as nn
 
 
 class RewardTeacher(nn.Module):
-    """简化版 Reward Teacher。
+    """Reward Teacher network F_phi(obs, action).
 
-    作用：提供 F_phi(obs, action) 作为 shaped reward 增量。
-    备注：这是“可运行骨架版”，先打通训练与日志链路，后续可替换为完整 meta-gradient 更新。
+    作用：提供 F_phi(obs, action) 作为 shaped reward 增量。实际 meta-gradient
+    更新逻辑由 task-local MGRS Teacher 模块调度。
     """
 
     def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 128):
@@ -26,7 +26,7 @@ class RewardTeacher(nn.Module):
 
 
 class TeacherState:
-    """训练期 Teacher 状态容器（占位）。"""
+    """训练期 Teacher 状态容器。"""
 
     def __init__(self):
         self.enabled = True

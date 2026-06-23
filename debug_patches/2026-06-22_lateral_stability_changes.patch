@@ -1,0 +1,3834 @@
+diff --git a/scripts/reinforcement_learning/rsl_rl/train.py b/scripts/reinforcement_learning/rsl_rl/train.py
+index d945ebd..3d82bfe 100644
+--- a/scripts/reinforcement_learning/rsl_rl/train.py
++++ b/scripts/reinforcement_learning/rsl_rl/train.py
+@@ -107,6 +107,8 @@ from isaaclab.utils.dict import print_dict
+ from isaaclab.utils.io import dump_yaml
+ from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper
+ 
++from marl_platoon.utils.best_checkpoint import BestCheckpointState, maybe_save_best_checkpoint
++
+ # paper modules
+ from marl_platoon.tasks.platoon.attacks import sample_hybrid_attack
+ from marl_platoon.tasks.platoon.teacher import RewardTeacher as PaperRewardTeacher
+@@ -123,6 +125,36 @@ torch.backends.cudnn.allow_tf32 = True
+ torch.backends.cudnn.deterministic = False
+ torch.backends.cudnn.benchmark = False
+ 
++
++def _find_happo_wrapper(env):
++    """Find the task-local HAPPO gym wrapper under RSL/video wrappers."""
++    current = env
++    visited = set()
++    while current is not None and id(current) not in visited:
++        visited.add(id(current))
++        if all(hasattr(current, name) for name in ("state_dict", "load_state_dict", "set_inference_mode")):
++            if hasattr(current, "algorithm_router"):
++                return current
++        current = getattr(current, "env", None)
++    return None
++
++
++def _attach_happo_state_to_checkpoint(env, checkpoint_path: str) -> None:
++    """Augment an RSL-RL checkpoint with task-local HAPPO weights when present."""
++    happo_wrapper = _find_happo_wrapper(env)
++    if happo_wrapper is None:
++        return
++    happo_state = happo_wrapper.state_dict()
++    if not happo_state:
++        return
++    checkpoint = torch.load(checkpoint_path, map_location="cpu")
++    if not isinstance(checkpoint, dict):
++        print(f"[WARN] Cannot attach HAPPO state to non-dict checkpoint: {checkpoint_path}")
++        return
++    checkpoint["platoon_happo_state"] = happo_state
++    torch.save(checkpoint, checkpoint_path)
++    print(f"[INFO]: Attached task-local HAPPO state to: {checkpoint_path}")
++
+ # ============================================================
+ # ✅ Reward Teacher 配置（可开关）
+ # ============================================================
+@@ -283,7 +315,8 @@ class TeacherRewardVecWrapper:
+         if actions.shape[-1] != self.act_dim:
+             raise RuntimeError(f"[Teacher] actions dim wrong: {tuple(actions.shape)} expected (*,{self.act_dim})")
+ 
+-        # paper-style hybrid attack metadata (placeholder CA-GAN interface)
++        # Legacy non-HAPPO wrapper attack metadata. HAPPO/MGRS tasks use the
++        # task-local CA-GAN attacker instead of this wrapper path.
+         if getattr(self.attack_cfg, "enable_attack", False):
+             beta_a, beta_p, f_a, f_p = sample_hybrid_attack(
+                 num_envs=int(self.num_envs),
+@@ -448,8 +481,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+     # wrap env for rsl-rl
+     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+ 
++    algorithm_cfg = getattr(env_cfg, "algorithm", None)
++    task_local_teacher = (
++        str(getattr(algorithm_cfg, "algorithm", "")).lower() == "happo"
++        and bool(getattr(algorithm_cfg, "enable_teacher", False))
++    )
++
+     # ✅ insert teacher wrapper (infer obs_dim from REAL reset output, not from spaces)
+-    if TEACHER_ENABLED:
++    # HAPPO platoon tasks use the task-local MGRS Teacher.  Wrapping here as well
++    # would create a second, unrelated reward-teacher path for the frozen outer PPO.
++    if TEACHER_ENABLED and not task_local_teacher:
+         device = torch.device(str(agent_cfg.device))
+         reset_out = env.reset()
+         pol0 = extract_policy_obs_tensor(reset_out, int(env.num_envs), device)
+@@ -470,6 +511,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+             attack_cfg=getattr(env_cfg, "attack", PlatoonEnvCfg.AttackCfg()),
+         )
+         print(f"[INFO] RewardTeacher enabled. obs_dim={obs_dim}, act_dim={act_dim}, device={device}")
++    elif TEACHER_ENABLED and task_local_teacher:
++        print("[INFO] RewardTeacher wrapper skipped: task-local HAPPO/MGRS teacher is enabled.")
+ 
+     # runner
+     if agent_cfg.class_name == "OnPolicyRunner":
+@@ -481,6 +524,24 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+ 
+     runner.add_git_repo_to_log(__file__)
+ 
++    original_save = runner.save
++
++    def save_with_happo_state(path: str, *args, **kwargs):
++        result = original_save(path, *args, **kwargs)
++        _attach_happo_state_to_checkpoint(env, path)
++        return result
++
++    runner.save = save_with_happo_state
++
++    best_state = BestCheckpointState()
++    original_log = runner.log
++
++    def log_and_save_best(locs: dict, width: int = 80, pad: int = 35):
++        original_log(locs, width=width, pad=pad)
++        maybe_save_best_checkpoint(runner, locs, best_state)
++
++    runner.log = log_and_save_best
++
+     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
+         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
+         runner.load(resume_path)
+@@ -490,6 +551,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
+ 
+     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+ 
++    final_checkpoint_path = os.path.join(log_dir, "model_final.pt")
++    runner.save(final_checkpoint_path)
++    print(f"[INFO]: Saved final model checkpoint to: {final_checkpoint_path}")
++
+     print(f"Training time: {round(time.time() - start_time, 2)} seconds")
+     env.close()
+ 
+diff --git a/source/my_exts/marl_platoon/algorithms/attacker.py b/source/my_exts/marl_platoon/algorithms/attacker.py
+index 444b16f..4c5b7ac 100644
+--- a/source/my_exts/marl_platoon/algorithms/attacker.py
++++ b/source/my_exts/marl_platoon/algorithms/attacker.py
+@@ -30,8 +30,15 @@ class AttackModuleCfg:
+     discriminator_lr: float = 1.0e-4
+     update_interval: int = 4
+     attack_obj_coef: float = 1.0
+-    reward_proxy_coef: float = 1.0
++    reward_proxy_coef: float = 1.0  # fallback only when no clean physical context is available
+     dos_proxy_coef: float = 0.3
++    attack_objective_clip: float = 20.0
++    curriculum_warmup_updates: int = 2000
++    curriculum_start_mode: str = "profile"
++    decay_start_updates: int = 5000
++    min_attack_obj_scale: float = 0.25
++    min_update_freq_scale: float = 0.25
++    decay_half_life_updates: int = 2500
+ 
+ 
+ class AttackGenerator(nn.Module):
+@@ -189,8 +196,8 @@ class ReferenceAttackLibrary:
+         acc_max = min(float(acc_cfg.get("max", 0.0)), self.cfg.max_fdi_acc)
+         sign_p = torch.sign(torch.randn_like(obs))
+         sign_a = torch.sign(torch.randn_like(f_a))
+-        f_p = 0.02 * pos_max * sign_p
+-        f_a = 0.02 * acc_max * sign_a
++        f_p = pos_max * sign_p
++        f_a = acc_max * sign_a
+         noise_std = float(fdi_cfg.get("noise_std", 0.0))
+         if noise_std > 0.0:
+             f_p = f_p + noise_std * torch.randn_like(obs)
+@@ -209,7 +216,7 @@ class ReferenceAttackLibrary:
+ 
+ 
+ class NoOpAttackModule(AttackerModule):
+-    """Placeholder attacker that preserves interfaces without perturbing data."""
++    """Disabled attacker that preserves the training-pipeline interface."""
+ 
+     def __init__(self, cfg: AttackModuleCfg | None = None):
+         self.cfg = cfg or AttackModuleCfg(enabled=False)
+@@ -218,46 +225,7 @@ class NoOpAttackModule(AttackerModule):
+         return obs
+ 
+     def perturb_action(self, actions: torch.Tensor) -> torch.Tensor:
+-        if not self.cfg.enabled:
+-            return actions
+-        out = actions.clone()
+-        # Control-channel FDI (approximate using max_fdi_acc budget).
+-        if out.is_cuda:
+-            eps = torch.empty_like(out).uniform_(-self.cfg.max_fdi_acc, self.cfg.max_fdi_acc)
+-        else:
+-            eps = torch.empty_like(out).uniform_(
+-                -self.cfg.max_fdi_acc,
+-                self.cfg.max_fdi_acc,
+-                generator=self._generator_cpu,
+-            )
+-        fdi_u = 0.02 * eps
+-        out = out + fdi_u
+-
+-        # Control-channel DoS with ZOH hold (u_hold).
+-        if self.cfg.max_dos_rate > 0.0:
+-            # Enforce action-channel DoS budget exactly per batch to avoid
+-            # small-sample Bernoulli spikes above max_dos_rate.
+-            flat_n = out.numel()
+-            k = int(self.cfg.max_dos_rate * flat_n)
+-            if k > 0:
+-                rand_flat = torch.rand(flat_n, device=out.device)
+-                topk_idx = torch.topk(rand_flat, k=k, largest=False).indices
+-                drop_mask = torch.zeros(flat_n, device=out.device, dtype=torch.bool)
+-                drop_mask[topk_idx] = True
+-                drop_mask = drop_mask.view_as(out)
+-            else:
+-                drop_mask = torch.zeros_like(out, dtype=torch.bool)
+-        else:
+-            drop_mask = torch.zeros_like(out, dtype=torch.bool)
+-        if self._last_valid_action is None or self._last_valid_action.shape != out.shape:
+-            self._last_valid_action = actions.detach().clone()
+-        out = torch.where(drop_mask, self._last_valid_action.to(out.device), out)
+-        self._last_valid_action = torch.where(drop_mask, self._last_valid_action.to(out.device), out).detach().clone()
+-        self.last_act_fdi_mean = float(fdi_u.abs().mean().item())
+-        self.last_act_dos_rate = float(drop_mask.float().mean().item())
+-        self.last_fdi_mean = 0.5 * (self.last_obs_fdi_mean + self.last_act_fdi_mean)
+-        self.last_dos_rate = 0.5 * (self.last_obs_dos_rate + self.last_act_dos_rate)
+-        return out
++        return actions
+ 
+     def maybe_update(self, context: dict[str, Any]) -> dict[str, float] | None:
+         return {"attack_enabled": float(self.cfg.enabled)}
+@@ -269,7 +237,7 @@ class RandomFDIDoSAttackModule(AttackerModule):
+     Modes:
+     - profile: previous bounded random FDI/DoS baseline.
+     - generator: state-conditioned G(z, s) attack generation without GAN updates.
+-    - cagan: skeleton with G, D, reference templates, and realism update hooks.
++    - cagan: state-conditioned CA-GAN update with realism regularization.
+     """
+ 
+     def __init__(self, cfg: AttackModuleCfg | None = None):
+@@ -304,8 +272,8 @@ class RandomFDIDoSAttackModule(AttackerModule):
+         self._cached_beta_p: torch.Tensor | None = None
+         self._cached_f_a: torch.Tensor | None = None
+         self._cached_beta_a: torch.Tensor | None = None
+-        self._cached_reward_proxy: float = 0.0
+-        self._cached_attack_obj_proxy: float = 0.0
++        self._cached_fallback_disruption_score: float = 0.0
++        self._cached_attack_objective: float = 0.0
+         self._pending_f_a: torch.Tensor | None = None
+         self._pending_beta_a: torch.Tensor | None = None
+         self._last_valid_obs: torch.Tensor | None = None
+@@ -329,15 +297,44 @@ class RandomFDIDoSAttackModule(AttackerModule):
+         self.generator_optimizer: torch.optim.Optimizer | None = None
+         self.discriminator_optimizer: torch.optim.Optimizer | None = None
+         self.sequence_discriminator_optimizer: torch.optim.Optimizer | None = None
++        self._runtime_mode = str(self.cfg.mode).lower()
++
++    def _get_runtime_mode(self, student_updates: int | None = None) -> str:
++        progress_updates = self._updates if student_updates is None else student_updates
++        if self.cfg.curriculum_warmup_updates > 0 and progress_updates < self.cfg.curriculum_warmup_updates:
++            return str(self.cfg.curriculum_start_mode).lower()
++        return str(self.cfg.mode).lower()
++
++    def _get_late_stage_attack_scale(self, student_updates: int) -> float:
++        if self.cfg.decay_start_updates <= 0 or student_updates <= self.cfg.decay_start_updates:
++            return 1.0
++        half_life = max(float(self.cfg.decay_half_life_updates), 1.0)
++        decay_steps = float(student_updates - self.cfg.decay_start_updates)
++        scale = 0.5 ** (decay_steps / half_life)
++        return float(max(self.cfg.min_attack_obj_scale, min(1.0, scale)))
++
++    def _get_late_stage_update_interval(self, student_updates: int) -> int:
++        if self.cfg.decay_start_updates <= 0 or student_updates <= self.cfg.decay_start_updates:
++            return max(self.cfg.update_interval, 1)
++        half_life = max(float(self.cfg.decay_half_life_updates), 1.0)
++        decay_steps = float(student_updates - self.cfg.decay_start_updates)
++        freq_scale = 0.5 ** (decay_steps / half_life)
++        freq_scale = max(self.cfg.min_update_freq_scale, min(1.0, freq_scale))
++        return max(int(round(max(self.cfg.update_interval, 1) / freq_scale)), 1)
+ 
+     def _build_target_mask(self, obs: torch.Tensor) -> torch.Tensor:
+         mode = str(self.cfg.target_mode).lower()
+         mask = torch.ones_like(obs, dtype=torch.bool)
+         if mode == "all":
+             return mask
+-        # platoon policy obs layout: rel_pos_chain(12) + last_vel(3) + last_ang_vel(3)
+-        rel_pos_end = min(12, obs.shape[-1])
+-        vel_end = min(18, obs.shape[-1])
++        # Local platoon obs layout: [rel_x, rel_y, rel_vx, rel_vy, own_vx, own_vy, yaw_rate, role_id].
++        # Older global-chain layouts are still handled by the fallback split.
++        if obs.shape[-1] <= 10:
++            rel_pos_end = min(4, obs.shape[-1])
++            vel_end = min(6, obs.shape[-1])
++        else:
++            rel_pos_end = max(obs.shape[-1] - 6, 0)
++            vel_end = max(obs.shape[-1] - 3, rel_pos_end)
+         if mode == "rel_pos":
+             mask[:] = False
+             mask[..., :rel_pos_end] = True
+@@ -378,12 +375,12 @@ class RandomFDIDoSAttackModule(AttackerModule):
+         noise = torch.randn(flat_obs.shape[0], self.cfg.noise_dim, device=obs.device)
+         assert self.generator is not None
+         f_p_raw, beta_p_logits, f_a_raw, beta_a_logits = self.generator(flat_obs, noise)
+-        f_p = (0.02 * self.cfg.max_fdi_pos * f_p_raw).view_as(obs)
++        f_p = (self.cfg.max_fdi_pos * f_p_raw).view_as(obs)
+         p_drop = torch.sigmoid(beta_p_logits).view_as(obs) * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
+         beta_p = 1.0 - (torch.rand_like(obs) < p_drop).float()
+         f_p = torch.where(target_mask, f_p * beta_p, torch.zeros_like(f_p))
+         beta_p = torch.where(target_mask, beta_p, torch.ones_like(beta_p))
+-        self._pending_f_a = 0.02 * self.cfg.max_fdi_acc * f_a_raw.detach()
++        self._pending_f_a = self.cfg.max_fdi_acc * f_a_raw.detach()
+         p_drop_a = torch.sigmoid(beta_a_logits).detach() * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
+         self._pending_beta_a = 1.0 - (torch.rand_like(p_drop_a) < p_drop_a).float()
+         self._pending_f_a = self._pending_f_a * self._pending_beta_a
+@@ -394,7 +391,8 @@ class RandomFDIDoSAttackModule(AttackerModule):
+             return obs
+         out = obs.clone()
+         target_mask = self._build_target_mask(out)
+-        mode = str(self.cfg.mode).lower()
++        mode = self._get_runtime_mode()
++        self._runtime_mode = mode
+ 
+         if mode in {"generator", "cagan"}:
+             f_p, beta_p, pending_f_a, pending_beta_a = self._sample_generator_attack(out, target_mask)
+@@ -453,50 +451,77 @@ class RandomFDIDoSAttackModule(AttackerModule):
+         self._cached_obs = obs.detach().clone()
+         self._cached_fdi = fdi_noise.detach().clone()
+         self._cached_dos = drop_mask.float().detach().clone()
++        self._cached_f_p = fdi_noise.detach().clone()
++        self._cached_beta_p = (~drop_mask).float().detach().clone()
++        action_dim = int(self.generator.action_dim) if self.generator is not None else 4
++        action_shape = (*obs.shape[:-1], action_dim)
++        if self._pending_f_a is not None and self._pending_f_a.numel() == int(torch.tensor(action_shape).prod().item()):
++            f_a = self._pending_f_a.to(obs.device, dtype=obs.dtype).view(action_shape)
++            beta_a = self._pending_beta_a.to(obs.device, dtype=obs.dtype).view(action_shape)
++        else:
++            f_a = torch.zeros(action_shape, device=obs.device, dtype=obs.dtype)
++            beta_a = torch.ones_like(f_a)
++        self._cached_f_a = f_a.detach().clone()
++        self._cached_beta_a = beta_a.detach().clone()
+         self._seq_obs.append(self._cached_obs)
+-        self._seq_fdi.append(self._cached_fdi)
+-        self._seq_dos.append(self._cached_dos)
++        self._seq_f_p.append(self._cached_f_p)
++        self._seq_beta_p.append(self._cached_beta_p)
++        self._seq_f_a.append(self._cached_f_a)
++        self._seq_beta_a.append(self._cached_beta_a)
+         if len(self._seq_obs) > self.seq_window:
+             self._seq_obs = self._seq_obs[-self.seq_window:]
+-            self._seq_fdi = self._seq_fdi[-self.seq_window:]
+-            self._seq_dos = self._seq_dos[-self.seq_window:]
+-        # Attack objective proxy (higher is stronger disruption):
+-        # larger perturbation magnitude and higher DoS utilization.
+-        self._cached_reward_proxy = float(
+-            self.cfg.reward_proxy_coef * fdi_noise.abs().mean().item()
+-            + self.cfg.dos_proxy_coef * drop_mask.float().mean().item()
+-        )
++            self._seq_f_p = self._seq_f_p[-self.seq_window:]
++            self._seq_beta_p = self._seq_beta_p[-self.seq_window:]
++            self._seq_f_a = self._seq_f_a[-self.seq_window:]
++            self._seq_beta_a = self._seq_beta_a[-self.seq_window:]
+         return out
+ 
+     def perturb_action(self, actions: torch.Tensor) -> torch.Tensor:
+         if not self.cfg.enabled:
+             return actions
+         out = actions.clone()
+-        if out.is_cuda:
+-            eps = torch.empty_like(out).uniform_(-self.cfg.max_fdi_acc, self.cfg.max_fdi_acc)
++        mode = self._get_runtime_mode()
++        self._runtime_mode = mode
++        if mode in {"generator", "cagan"} and self._pending_f_a is not None and self._pending_beta_a is not None:
++            fdi_u = self._pending_f_a.to(out.device, dtype=out.dtype).view_as(out)
++            beta_a = self._pending_beta_a.to(out.device, dtype=out.dtype).view_as(out)
++            drop_mask = beta_a <= 0.5
+         else:
+-            eps = torch.empty_like(out).uniform_(
+-                -self.cfg.max_fdi_acc,
+-                self.cfg.max_fdi_acc,
+-                generator=self._generator_cpu,
+-            )
+-        fdi_u = 0.02 * eps
+-        out = out + fdi_u
++            if out.is_cuda:
++                fdi_u = torch.empty_like(out).uniform_(-self.cfg.max_fdi_acc, self.cfg.max_fdi_acc)
++            else:
++                fdi_u = torch.empty_like(out).uniform_(
++                    -self.cfg.max_fdi_acc,
++                    self.cfg.max_fdi_acc,
++                    generator=self._generator_cpu,
++                )
++            if self.cfg.max_dos_rate > 0.0:
++                rand_mask = torch.rand(out.shape, device=out.device)
++                drop_mask = rand_mask < self.cfg.max_dos_rate
++            else:
++                drop_mask = torch.zeros_like(out, dtype=torch.bool)
+ 
+         if self.cfg.max_dos_rate > 0.0:
+             flat_n = out.numel()
+             k = int(self.cfg.max_dos_rate * flat_n)
+-            if k > 0:
+-                rand_flat = torch.rand(flat_n, device=out.device)
+-                topk_idx = torch.topk(rand_flat, k=k, largest=False).indices
+-                drop_mask = torch.zeros(flat_n, device=out.device, dtype=torch.bool)
+-                drop_mask[topk_idx] = True
+-                drop_mask = drop_mask.view_as(out)
+-            else:
++            if k <= 0:
+                 drop_mask = torch.zeros_like(out, dtype=torch.bool)
++            else:
++                flat_drop = drop_mask.reshape(-1)
++                if int(flat_drop.sum().item()) > k:
++                    priorities = torch.rand(flat_n, device=out.device)
++                    priorities = torch.where(flat_drop, priorities, torch.ones_like(priorities) + 1.0)
++                    topk_idx = torch.topk(priorities, k=k, largest=False).indices
++                    limited = torch.zeros(flat_n, device=out.device, dtype=torch.bool)
++                    limited[topk_idx] = True
++                    drop_mask = limited.view_as(out)
+         else:
+             drop_mask = torch.zeros_like(out, dtype=torch.bool)
+ 
++        fdi_u = torch.clamp(fdi_u, -self.cfg.max_fdi_acc, self.cfg.max_fdi_acc)
++        fdi_u = fdi_u * (~drop_mask).to(dtype=out.dtype)
++        out = out + fdi_u
++
+         if self._last_valid_action is None or self._last_valid_action.shape != out.shape:
+             self._last_valid_action = actions.detach().clone()
+         out = torch.where(drop_mask, self._last_valid_action.to(out.device), out)
+@@ -504,6 +529,7 @@ class RandomFDIDoSAttackModule(AttackerModule):
+ 
+         self.last_act_fdi_mean = float(fdi_u.abs().mean().item())
+         self.last_act_dos_rate = float(drop_mask.float().mean().item())
++        self.last_beta_a = 1.0 - self.last_act_dos_rate
+         self.last_act_drop_count = float(drop_mask.sum().item())
+         self.last_act_elem_n = float(drop_mask.numel())
+         self.last_act_dos_budget = float(self.cfg.max_dos_rate)
+@@ -514,35 +540,36 @@ class RandomFDIDoSAttackModule(AttackerModule):
+ 
+     def maybe_update(self, context: dict[str, Any]) -> dict[str, float] | None:
+         self._updates += 1
+-        # Step-3 physical attack proxy (paper-aligned direction):
+-        # maximize defender degradation under realism regularization.
+-        reward_mean = float(context.get("reward_mean", 0.0))
+-        forward_drive = float(context.get("forward_drive", 0.0))
+-        no_backward_penalty = float(context.get("no_backward_penalty", 0.0))
++        # Paper objective direction: maximize clean physical degradation while
++        # penalizing attack energy and DoS use for realism/stealthiness.
+         bad_done_rate = float(context.get("bad_done_rate", 0.0))
+-        spacing_err_proxy = float(context.get("spacing_err_proxy", 0.0))
+-        vel_err_proxy = float(context.get("vel_err_proxy", 0.0))
+-        acc_proxy = float(context.get("acc_proxy", 0.0))
+-        jerk_proxy = float(context.get("jerk_proxy", 0.0))
+-        energy_proxy = abs(self.last_obs_fdi_mean) + abs(self.last_act_fdi_mean)
+-        self.last_obj_spacing = spacing_err_proxy
+-        self.last_obj_vel = vel_err_proxy
+-        self.last_obj_acc = acc_proxy
+-        self.last_obj_jerk = jerk_proxy
++        physical_cost = float(context.get("physical_cost", 0.0))
++        spacing_cost = float(context.get("physical_spacing_cost", 0.0))
++        velocity_cost = float(context.get("physical_velocity_cost", 0.0))
++        acceleration_cost = float(context.get("physical_acceleration_cost", 0.0))
++        jerk_cost = float(context.get("physical_jerk_cost", 0.0))
++        overspeed_cost = float(context.get("physical_overspeed_cost", 0.0))
++        collision_cost = float(context.get("physical_collision_cost", 0.0))
++        l_adv_fdi = abs(self.last_obs_fdi_mean) + abs(self.last_act_fdi_mean)
++        l_adv_dos = abs(self.last_obs_dos_rate) + abs(self.last_act_dos_rate)
++        self.last_obj_spacing = spacing_cost
++        self.last_obj_vel = velocity_cost
++        self.last_obj_acc = acceleration_cost
++        self.last_obj_jerk = jerk_cost
+         self.last_obj_bad_done = bad_done_rate
+-        self.last_obj_energy = energy_proxy
+-        self._cached_attack_obj_proxy = (
+-            spacing_err_proxy
+-            + vel_err_proxy
+-            + acc_proxy
+-            + jerk_proxy
+-            + bad_done_rate
+-            - energy_proxy
++        self.last_obj_energy = l_adv_fdi + l_adv_dos
++        raw_attack_objective = physical_cost + collision_cost + bad_done_rate - l_adv_fdi - l_adv_dos
++        self._cached_attack_objective = float(
++            max(min(raw_attack_objective, self.cfg.attack_objective_clip), -self.cfg.attack_objective_clip)
+         )
+ 
+-        mode = str(self.cfg.mode).lower()
+-        if self.cfg.enabled and mode == "cagan" and self._updates % max(self.cfg.update_interval, 1) == 0:
+-            self._update_cagan_skeleton(context)
++        student_updates = int(context.get("student_updates", self._updates))
++        mode = self._get_runtime_mode(student_updates)
++        self._runtime_mode = mode
++        attack_obj_scale = self._get_late_stage_attack_scale(student_updates)
++        update_interval = self._get_late_stage_update_interval(student_updates)
++        if self.cfg.enabled and mode == "cagan" and self._updates % update_interval == 0:
++            self._update_cagan(context, attack_obj_scale=attack_obj_scale)
+ 
+         expected_act_dos = (self.last_act_drop_count / self.last_act_elem_n) if self.last_act_elem_n > 0 else 0.0
+         self.last_stats_inconsistent = float(abs(self.last_act_dos_rate - expected_act_dos) > 1.0e-6)
+@@ -550,12 +577,18 @@ class RandomFDIDoSAttackModule(AttackerModule):
+             (abs(self.last_obj_spacing)
+              + abs(self.last_obj_vel)
+              + abs(self.last_obj_acc)
+-             + abs(self.last_obj_jerk))
+-            / 4.0
++             + abs(self.last_obj_jerk)
++             + abs(overspeed_cost)
++             + abs(collision_cost))
++            / 6.0
+         )
+         return {
+             "attack_enabled": float(self.cfg.enabled),
+             "attack_mode": mode,
++            "attack_target_mode_cfg": str(self.cfg.mode).lower(),
++            "attack_curriculum_warmup_updates": float(self.cfg.curriculum_warmup_updates),
++            "attack_late_obj_scale": attack_obj_scale,
++            "attack_late_update_interval": float(update_interval),
+             "fdi_abs_mean": self.last_fdi_mean,
+             "dos_rate": self.last_dos_rate,
+             "obs_fdi_abs_mean": self.last_obs_fdi_mean,
+@@ -575,21 +608,30 @@ class RandomFDIDoSAttackModule(AttackerModule):
+             "attack_d_loss": self.last_d_loss,
+             "attack_realism_loss": self.last_realism_loss,
+             "attack_seq_realism_loss": self.last_seq_realism_loss,
+-            "attack_obj_proxy": self.last_attack_obj,
++            "attack_objective": self.last_attack_obj,
+             "obj_spacing": self.last_obj_spacing,
+             "obj_vel": self.last_obj_vel,
+             "obj_acc": self.last_obj_acc,
+             "obj_jerk": self.last_obj_jerk,
+             "obj_bad_done": self.last_obj_bad_done,
+             "obj_energy": self.last_obj_energy,
++            "obj_physical_cost": physical_cost,
++            "obj_overspeed": overspeed_cost,
++            "obj_collision": collision_cost,
+             "attack_phy_ctx_norm": phy_ctx_norm,
+             "attack_cond_dim": 4.0,
+             "attack_ref_template_id": self.last_ref_template_id,
+             "attack_unique_ref_tpl_count": self.last_unique_ref_tpl_count,
+         }
+ 
+-    def _update_cagan_skeleton(self, context: dict[str, Any]) -> None:
+-        if self._cached_obs is None or self._cached_fdi is None or self._cached_dos is None:
++    def _update_cagan(self, context: dict[str, Any], attack_obj_scale: float = 1.0) -> None:
++        if (
++            self._cached_obs is None
++            or self._cached_f_p is None
++            or self._cached_beta_p is None
++            or self._cached_f_a is None
++            or self._cached_beta_a is None
++        ):
+             return
+         self._ensure_neural_modules(self._cached_obs.device)
+         assert self.discriminator is not None
+@@ -598,17 +640,14 @@ class RandomFDIDoSAttackModule(AttackerModule):
+         assert self.sequence_discriminator_optimizer is not None
+         # Convert possible inference tensors (from env step path) into fresh
+         # regular tensors before autograd-enabled discriminator updates.
+-        obs = torch.tensor(self._cached_obs, device=self._cached_obs.device, dtype=self._cached_obs.dtype).reshape(
+-            -1, self._cached_obs.shape[-1]
+-        )
+-        fake_fdi = torch.tensor(
+-            self._cached_fdi, device=self._cached_fdi.device, dtype=self._cached_fdi.dtype
+-        ).reshape(-1, self._cached_fdi.shape[-1])
+-        fake_dos = torch.tensor(
+-            self._cached_dos, device=self._cached_dos.device, dtype=self._cached_dos.dtype
+-        ).reshape(-1, self._cached_dos.shape[-1])
+-        real_fdi, real_dos, ref_template_id = self.reference_library.sample(
++        obs = self._cached_obs.detach().clone().reshape(-1, self._cached_obs.shape[-1])
++        fake_f_p = self._cached_f_p.detach().clone().reshape(-1, self._cached_f_p.shape[-1])
++        fake_beta_p = self._cached_beta_p.detach().clone().reshape(-1, self._cached_beta_p.shape[-1])
++        fake_f_a = self._cached_f_a.detach().clone().reshape(-1, self._cached_f_a.shape[-1])
++        fake_beta_a = self._cached_beta_a.detach().clone().reshape(-1, self._cached_beta_a.shape[-1])
++        real_f_p, real_beta_p, real_f_a, real_beta_a, ref_template_id = self.reference_library.sample(
+             obs,
++            action_dim=fake_f_a.shape[-1],
+             context=context,
+             recent_ids=self._recent_ref_templates[-3:],
+         )
+@@ -618,47 +657,47 @@ class RandomFDIDoSAttackModule(AttackerModule):
+             self._recent_ref_templates = self._recent_ref_templates[-64:]
+         self.last_unique_ref_tpl_count = float(len(set(self._recent_ref_templates[-20:])))
+ 
+-        real_logits = self.discriminator(obs, real_fdi, real_dos)
+-        fake_logits = self.discriminator(obs, fake_fdi.detach(), fake_dos.detach())
++        real_logits = self.discriminator(obs, real_f_p, real_beta_p, real_f_a, real_beta_a)
++        fake_logits = self.discriminator(
++            obs, fake_f_p.detach(), fake_beta_p.detach(), fake_f_a.detach(), fake_beta_a.detach()
++        )
+         d_loss = torch.nn.functional.softplus(-real_logits).mean() + torch.nn.functional.softplus(fake_logits).mean()
+         self.discriminator_optimizer.zero_grad()
+         d_loss.backward()
+         self.discriminator_optimizer.step()
+         self.last_d_loss = float(d_loss.item())
+ 
+-        # Step-3 generator objective:
+-        # Re-sample differentiable attacks from G so the physical attack proxy
+-        # modulates gradients on the generator output instead of only changing
+-        # the scalar loss value. The sampled DoS is non-differentiable during
+-        # environment rollout, so generator training uses dos probability.
++        # Generator objective:
++        # Re-sample differentiable attacks from G so the clean physical attack
++        # objective modulates gradients on the generator output. The sampled DoS
++        # is non-differentiable during environment rollout, so generator training
++        # uses its dropout probability.
+         assert self.generator is not None
+         assert self.generator_optimizer is not None
+         noise = torch.randn(obs.shape[0], self.cfg.noise_dim, device=obs.device)
+-        fdi_raw_g, dos_logits_g = self.generator(obs, noise)
+-        fdi_g = 0.02 * self.cfg.max_fdi_pos * fdi_raw_g
+-        dos_prob_g = torch.sigmoid(dos_logits_g) * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
+-        fake_logits_for_g = self.discriminator(obs, fdi_g, dos_prob_g)
++        f_p_raw_g, beta_p_logits_g, f_a_raw_g, beta_a_logits_g = self.generator(obs, noise)
++        f_p_g = self.cfg.max_fdi_pos * f_p_raw_g
++        f_a_g = self.cfg.max_fdi_acc * f_a_raw_g
++        p_drop_g = torch.sigmoid(beta_p_logits_g) * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
++        p_drop_a_g = torch.sigmoid(beta_a_logits_g) * min(max(self.cfg.max_dos_rate, 0.0), 1.0)
++        beta_p_g = 1.0 - p_drop_g
++        beta_a_g = 1.0 - p_drop_a_g
++        fake_logits_for_g = self.discriminator(obs, f_p_g, beta_p_g, f_a_g, beta_a_g)
+         realism_loss = torch.nn.functional.softplus(-fake_logits_for_g).mean()
+-        attack_obj = torch.tensor(self._cached_attack_obj_proxy, device=obs.device)
+-        differentiable_attack_strength = (
+-            self.cfg.reward_proxy_coef * fdi_g.abs().mean()
+-            + self.cfg.dos_proxy_coef * dos_prob_g.mean()
+-        )
+-        # Step-8: policy-gradient-style attacker update.
+-        # We use a score-function surrogate for the discrete DoS pathway and
+-        # keep the FDI branch differentiable. This is still an engineering
+-        # proxy, but it is closer to the paper's attacker policy optimization
+-        # than pure deterministic loss shaping.
+-        dos_log_prob = torch.nn.functional.binary_cross_entropy_with_logits(
+-            dos_logits_g, (dos_prob_g > 0.5).float(), reduction="none"
+-        )
+-        dos_policy_loss = (attack_obj.detach() * dos_log_prob).mean()
+-        fdi_policy_loss = -attack_obj.detach() * fdi_g.abs().mean()
+-        g_loss = (
+-            self.cfg.attack_obj_coef * (dos_policy_loss + fdi_policy_loss)
+-            + self.cfg.realism_coef * realism_loss
+-            - 0.1 * differentiable_attack_strength
++        attack_obj = torch.tensor(self._cached_attack_objective, device=obs.device)
++        # Paper-aligned generator objective:
++        # maximize J(theta_C, theta_G) - lambda_real * L_real.
++        # Since the simulator is not differentiable through the rollout, the
++        # clean physical attack objective is used as the rollout-level scalar
++        # weight for the generator's differentiable attack distribution.
++        expected_attack_cost = (
++            f_p_g.abs().mean()
++            + f_a_g.abs().mean()
++            + p_drop_g.mean()
++            + p_drop_a_g.mean()
+         )
++        effective_attack_obj_coef = self.cfg.attack_obj_coef * float(attack_obj_scale)
++        g_loss = -effective_attack_obj_coef * attack_obj.detach() * expected_attack_cost + self.cfg.realism_coef * realism_loss
+         self.generator_optimizer.zero_grad()
+         g_loss.backward()
+         self.generator_optimizer.step()
+@@ -666,13 +705,17 @@ class RandomFDIDoSAttackModule(AttackerModule):
+         seq_realism_loss = torch.tensor(0.0, device=obs.device)
+         if len(self._seq_obs) >= self.seq_window:
+             obs_seq = torch.cat(self._seq_obs[-self.seq_window:], dim=0)
+-            fdi_seq = torch.cat(self._seq_fdi[-self.seq_window:], dim=0)
+-            dos_seq = torch.cat(self._seq_dos[-self.seq_window:], dim=0)
++            f_p_seq = torch.cat(self._seq_f_p[-self.seq_window:], dim=0)
++            beta_p_seq = torch.cat(self._seq_beta_p[-self.seq_window:], dim=0)
++            f_a_seq = torch.cat(self._seq_f_a[-self.seq_window:], dim=0)
++            beta_a_seq = torch.cat(self._seq_beta_a[-self.seq_window:], dim=0)
+             if obs_seq.dim() == 2:
+                 obs_seq = obs_seq.unsqueeze(0)
+-                fdi_seq = fdi_seq.unsqueeze(0)
+-                dos_seq = dos_seq.unsqueeze(0)
+-            seq_fake_logits = self.sequence_discriminator(obs_seq, fdi_seq, dos_seq)
++                f_p_seq = f_p_seq.unsqueeze(0)
++                beta_p_seq = beta_p_seq.unsqueeze(0)
++                f_a_seq = f_a_seq.unsqueeze(0)
++                beta_a_seq = beta_a_seq.unsqueeze(0)
++            seq_fake_logits = self.sequence_discriminator(obs_seq, f_p_seq, beta_p_seq, f_a_seq, beta_a_seq)
+             seq_realism_loss = torch.nn.functional.softplus(-seq_fake_logits).mean()
+             self.sequence_discriminator_optimizer.zero_grad()
+             seq_realism_loss.backward()
+diff --git a/source/my_exts/marl_platoon/algorithms/happo/actor.py b/source/my_exts/marl_platoon/algorithms/happo/actor.py
+index fceceab..d075f04 100644
+--- a/source/my_exts/marl_platoon/algorithms/happo/actor.py
++++ b/source/my_exts/marl_platoon/algorithms/happo/actor.py
+@@ -49,7 +49,10 @@ class GaussianActorNet(nn.Module):
+ 
+     def distribution(self, obs: torch.Tensor) -> Independent:
+         mean = self.mean_net(obs)
+-        std = self.log_std.exp().expand_as(mean)
++        mean = torch.nan_to_num(mean, nan=0.0, posinf=1.0e3, neginf=-1.0e3)
++        safe_log_std = torch.nan_to_num(self.log_std, nan=0.0, posinf=2.0, neginf=-20.0)
++        safe_log_std = torch.clamp(safe_log_std, min=-20.0, max=2.0)
++        std = torch.exp(safe_log_std).clamp_min(1.0e-6).expand_as(mean)
+         return Independent(Normal(mean, std), 1)
+ 
+     def forward(self, obs: torch.Tensor, deterministic: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+@@ -96,8 +99,14 @@ class HAPPOActor:
+         # and disable inference mode before building the actor loss graph.
+         with torch.inference_mode(False), torch.enable_grad():
+             action_log_probs, dist_entropy = self.evaluate_actions(sample["obs"], sample["actions"])
++            if not torch.isfinite(action_log_probs).all() or not torch.isfinite(dist_entropy):
++                zero = torch.tensor(0.0, device=self.device)
++                one = torch.ones_like(old_action_log_probs)
++                return zero, zero, zero, one
+             imp_weights = getattr(torch, self.cfg.action_aggregation)(
+-                torch.exp(action_log_probs - old_action_log_probs), dim=-1, keepdim=True
++                torch.exp(torch.clamp(action_log_probs - old_action_log_probs, min=-20.0, max=20.0)),
++                dim=-1,
++                keepdim=True,
+             )
+             surr1 = imp_weights * adv_targ
+             surr2 = torch.clamp(imp_weights, 1.0 - self.cfg.clip_param, 1.0 + self.cfg.clip_param) * adv_targ
+diff --git a/source/my_exts/marl_platoon/algorithms/happo/runner.py b/source/my_exts/marl_platoon/algorithms/happo/runner.py
+index 3e17469..a40a3d3 100644
+--- a/source/my_exts/marl_platoon/algorithms/happo/runner.py
++++ b/source/my_exts/marl_platoon/algorithms/happo/runner.py
+@@ -1,8 +1,8 @@
+-"""Task-local HAPPO runner skeleton for marl_platoon.
++"""Task-local HAPPO runner for marl_platoon.
+ 
+ The official IsaacLab launch path remains responsible for creating the app and
+-environment. This runner is a reusable internal component that can later be
+-called from the platoon task algorithm switch when `algorithm == "happo"`.
++environment. This runner is the lower-level HAPPO-style trust-region optimizer
++used by the task-local MGRS pipeline when `algorithm == "happo"`.
+ """
+ 
+ from __future__ import annotations
+@@ -32,6 +32,7 @@ class PlatoonHAPPOCfg:
+     clip_param: float = 0.1
+     ppo_epoch: int = 3
+     num_mini_batches: int = 4
++    factor_eval_chunk_size: int = 8192
+     entropy_coef: float = 0.01
+     max_grad_norm: float = 0.5
+     device: str = "cpu"
+@@ -110,20 +111,66 @@ class PlatoonHAPPORunner:
+         actor_train_infos: list[dict[str, float]] = []
+         for agent_id in agent_order:
+             with torch.no_grad():
+-                obs = self.buffer.obs[:-1, :, agent_id].reshape(-1, self.cfg.obs_dim)
+-                actions = self.buffer.actions[:, :, agent_id].reshape(-1, self.cfg.act_dim)
+-                old_log_probs, _ = self.actors[agent_id].evaluate_actions(obs, actions)
++                old_log_probs = self.buffer.action_log_probs[:, :, agent_id].reshape(-1, 1)
+             actor_info = self.actors[agent_id].train_on_buffer(self.buffer, advantages, agent_id, factor)
+             with torch.no_grad():
+-                new_log_probs, _ = self.actors[agent_id].evaluate_actions(obs, actions)
+-                ratio = torch.exp(new_log_probs - old_log_probs).reshape(self.cfg.episode_length, self.cfg.num_envs, 1)
++                new_log_probs = self._evaluate_actor_log_probs_chunked(agent_id)
++                ratio = torch.exp(torch.clamp(new_log_probs - old_log_probs, min=-20.0, max=20.0)).reshape(
++                    self.cfg.episode_length, self.cfg.num_envs, 1
++                )
+                 factor = factor * ratio
+             actor_train_infos.append(actor_info)
++            if self.device.type == "cuda":
++                torch.cuda.empty_cache()
+ 
+         critic_train_info = self.critic.train_on_buffer(self.buffer)
+         self.buffer.after_update()
++        if self.device.type == "cuda":
++            torch.cuda.empty_cache()
+         return actor_train_infos, critic_train_info
+ 
++    def _evaluate_actor_log_probs_chunked(self, agent_id: int) -> torch.Tensor:
++        batch_size = self.cfg.episode_length * self.cfg.num_envs
++        chunk_size = max(int(self.cfg.factor_eval_chunk_size), 1)
++        obs = self.buffer.obs[:-1, :, agent_id].reshape(batch_size, self.cfg.obs_dim)
++        actions = self.buffer.actions[:, :, agent_id].reshape(batch_size, self.cfg.act_dim)
++        log_prob_chunks: list[torch.Tensor] = []
++        actor_net = self.actors[agent_id].actor
++        for start in range(0, batch_size, chunk_size):
++            end = min(start + chunk_size, batch_size)
++            action_log_probs, _ = actor_net.evaluate_actions(obs[start:end], actions[start:end])
++            log_prob_chunks.append(action_log_probs.detach())
++        return torch.cat(log_prob_chunks, dim=0)
++
++    def state_dict(self) -> dict:
++        """Return trainable HAPPO state for checkpointing."""
++        return {
++            "cfg": dict(self.cfg.__dict__),
++            "actors": [actor.actor.state_dict() for actor in self.actors],
++            "actor_optimizers": [actor.optimizer.state_dict() for actor in self.actors],
++            "critic": self.critic.critic.state_dict(),
++            "critic_optimizer": self.critic.optimizer.state_dict(),
++        }
++
++    def load_state_dict(self, state: dict, strict: bool = True) -> None:
++        """Load trainable HAPPO state from a checkpoint."""
++        actors = state.get("actors", [])
++        if len(actors) != len(self.actors):
++            raise ValueError(f"HAPPO actor count mismatch: got {len(actors)}, expected {len(self.actors)}")
++        for actor, actor_state in zip(self.actors, actors):
++            actor.actor.load_state_dict(actor_state, strict=strict)
++
++        actor_optimizers = state.get("actor_optimizers", [])
++        if len(actor_optimizers) == len(self.actors):
++            for actor, optimizer_state in zip(self.actors, actor_optimizers):
++                actor.optimizer.load_state_dict(optimizer_state)
++
++        if "critic" not in state:
++            raise ValueError("HAPPO checkpoint is missing critic state.")
++        self.critic.critic.load_state_dict(state["critic"], strict=strict)
++        if "critic_optimizer" in state:
++            self.critic.optimizer.load_state_dict(state["critic_optimizer"])
++
+     def prep_rollout(self) -> None:
+         for actor in self.actors:
+             actor.prep_rollout()
+diff --git a/source/my_exts/marl_platoon/algorithms/pipeline.py b/source/my_exts/marl_platoon/algorithms/pipeline.py
+index b23ab73..e470023 100644
+--- a/source/my_exts/marl_platoon/algorithms/pipeline.py
++++ b/source/my_exts/marl_platoon/algorithms/pipeline.py
+@@ -61,6 +61,9 @@ class TeacherModule:
+     def shape_reward(self, obs: torch.Tensor, actions: torch.Tensor, rewards: torch.Tensor) -> torch.Tensor:
+         return rewards
+ 
++    def get_physical_attack_context(self) -> dict[str, float]:
++        return {}
++
+     def maybe_update(self, context: dict[str, Any]) -> dict[str, float] | None:
+         return None
+ 
+@@ -145,36 +148,39 @@ class PlatoonTrainingPipeline:
+         return result
+ 
+     def _compute_teacher_outer_score_j(self, batch: StepBatch) -> float:
+-        """Compute Step-1 outer objective score J for teacher updates.
+-
+-        This is a first-order meta proxy (no second-order gradient):
+-            J = reward_mean + forward_drive - no_backward_penalty - bad_done_rate
+-
+-        where:
+-        - reward_mean: current shaped reward mean over env/agent dims
+-        - forward_drive: positive forward command magnitude proxy
+-        - no_backward_penalty: negative forward command magnitude proxy
+-        - bad_done_rate: termination proxy (includes reset_on_bad_ori when present)
++        """Compute paper-aligned outer objective score J.
+ 
+-        The teacher outer signal is then defined over windows:
+-            delta_j = J_post - J_pre
++        This is the task-side bridge to the paper's global control objective.
++        It uses the shaped reward plus termination cost only; the detailed
++        physical-cost decomposition is supplied by the teacher context.
+         """
+         reward_mean = float(batch.rewards.mean().item())
+-        forward_component = batch.actions[..., 0]
+-        forward_drive = float(torch.relu(forward_component).mean().item())
+-        no_backward_penalty = float(torch.relu(-forward_component).mean().item())
+         bad_done_rate = float(batch.dones.float().mean().item())
+-        return reward_mean + forward_drive - no_backward_penalty - bad_done_rate
++        return reward_mean - bad_done_rate
++
++    def _compute_teacher_physical_outer_score(self, batch: StepBatch, physical_context: dict[str, float]) -> float:
++        physical_cost = physical_context.get("physical_cost")
++        if physical_cost is None:
++            return self._compute_teacher_outer_score_j(batch)
++        bad_done_rate = float(batch.dones.float().mean().item())
++        collision_cost = float(physical_context.get("physical_collision_cost", 0.0))
++        # Paper global cost: J = E[mean_i c_i(t) + C_col I_col(t)].
++        # The teacher context already provides mean_i c_i(t)-compatible
++        # physical_cost, so do not double count its sub-terms here.
++        return -float(physical_cost) - collision_cost - bad_done_rate
+ 
+     def process_transition(self, batch: StepBatch) -> dict[str, Any]:
+         self.total_steps += 1
+-        teacher_outer_j = self._compute_teacher_outer_score_j(batch)
+-        if self._teacher_outer_j_pre is None:
+-            self._teacher_outer_j_pre = teacher_outer_j
+-        self._teacher_outer_j_latest = teacher_outer_j
+ 
++        physical_attack_context: dict[str, float] = {}
+         if self.flags.enable_teacher:
+             batch.rewards = self.teacher.shape_reward(batch.obs, batch.actions, batch.rewards)
++            physical_attack_context = self.teacher.get_physical_attack_context()
++
++        teacher_outer_j = self._compute_teacher_physical_outer_score(batch, physical_attack_context)
++        if self._teacher_outer_j_pre is None:
++            self._teacher_outer_j_pre = teacher_outer_j
++        self._teacher_outer_j_latest = teacher_outer_j
+ 
+         self.student.observe(batch)
+         update_info = self.student.maybe_update()
+@@ -184,21 +190,14 @@ class PlatoonTrainingPipeline:
+         if update_info is not None:
+             self.student_updates += 1
+             if self.flags.enable_attack and self.student_updates % max(self.schedule.attacker_every_student_updates, 1) == 0:
+-                forward_component = batch.actions[..., 0]
+                 rewards = batch.rewards
+                 dones = batch.dones
+                 attack_context = {
+                     "student_updates": self.student_updates,
+                     "reward_mean": float(rewards.mean().item()),
+-                    "forward_drive": float(torch.relu(forward_component).mean().item()),
+-                    "no_backward_penalty": float(torch.relu(-forward_component).mean().item()),
+                     "bad_done_rate": float(dones.float().mean().item()),
+-                    # lightweight physical proxies for CA-GAN conditioning
+-                    "spacing_err_proxy": float(rewards.abs().mean().item()),
+-                    "vel_err_proxy": float(torch.relu(forward_component.abs() - 0.5).mean().item()),
+-                    "acc_proxy": float(torch.relu(batch.actions[..., 0].abs() - 0.2).mean().item()),
+-                    "jerk_proxy": float(torch.relu(batch.actions.diff(dim=0).abs().mean() if batch.actions.shape[0] > 1 else torch.tensor(0.0, device=batch.actions.device)).item()),
+                 }
++                attack_context.update(physical_attack_context)
+                 atk_info = self.attacker.maybe_update(attack_context)
+                 self.attacker_updates += 1
+                 logs["attacker_update"] = atk_info
+diff --git a/source/my_exts/marl_platoon/algorithms/router.py b/source/my_exts/marl_platoon/algorithms/router.py
+index 50e4b66..391a577 100644
+--- a/source/my_exts/marl_platoon/algorithms/router.py
++++ b/source/my_exts/marl_platoon/algorithms/router.py
+@@ -8,10 +8,13 @@ code once the rollout loop is connected.
+ 
+ from __future__ import annotations
+ 
++import csv
+ from dataclasses import dataclass
++from pathlib import Path
+ from typing import Any
+ 
+ import torch
++from isaaclab.utils.math import quat_apply, quat_apply_inverse
+ 
+ from marl_platoon.harl_adapter import flatten_joint_action, merge_agent_obs, split_agent_obs
+ from marl_platoon.algorithms.happo import PlatoonHAPPOCfg, PlatoonHAPPORunner
+@@ -41,7 +44,7 @@ class PlatoonAlgorithmRouter:
+         self.cfg = cfg
+         self.runner_cfg = runner_cfg
+         self.algorithm = str(getattr(cfg, "algorithm", "ppo")).lower()
+-        self.num_agents = int(getattr(cfg, "num_agents", 4))
++        self.num_agents = int(getattr(cfg, "num_agents", 6))
+         self.device = torch.device(getattr(env, "device", "cpu"))
+         self.num_envs = int(getattr(env, "num_envs", 1))
+         self.runner: PlatoonHAPPORunner | None = None
+@@ -55,6 +58,124 @@ class PlatoonAlgorithmRouter:
+         self._log_level = str(getattr(cfg, "happo_log_level", "basic")).lower()
+         self.pipeline: PlatoonTrainingPipeline | None = None
+         self._last_next_obs: torch.Tensor | None = None
++        self.inference_only = False
++        self.deterministic_actions = False
++        self.enable_eval_attack = False
++        self._metrics_csv_path: Path | None = None
++        self._metrics_csv_file = None
++        self._metrics_csv_writer: csv.DictWriter | None = None
++        self._metrics_fieldnames = [
++            "update",
++            "env_step",
++            "sim_time_s",
++            "num_envs",
++            "num_agents",
++            "command_speed_mean",
++            "leader_speed_mean",
++            "platoon_speed_mean",
++            "leader_speed_error_mean",
++            "speed_error_abs_mean",
++            "gap_error_mean",
++            "gap_error_abs_mean",
++            "gap_error_max_abs",
++            "lateral_error_abs_mean",
++            "lateral_error_abs_max",
++            "lateral_worst_pair",
++            "lateral_pair_1_abs_mean",
++            "lateral_pair_2_abs_mean",
++            "lateral_pair_3_abs_mean",
++            "lateral_pair_4_abs_mean",
++            "lateral_pair_5_abs_mean",
++            "heading_error_abs_mean",
++            "heading_error_abs_max",
++            "pair_heading_error_abs_mean",
++            "pair_heading_error_abs_max",
++            "min_pair_gap_mean",
++            "collision_rate",
++            "reward_env_mean",
++            "done_rate",
++            "termination_time_out",
++            "termination_reset_on_bad_ori",
++            "action_abs_mean",
++            "leader_action_abs_mean",
++            "reward_leader_motion",
++            "reward_leader_progress",
++            "reward_formation",
++            "reward_collision_risk",
++            "reward_forward_drive",
++            "reward_stall_penalty",
++            "reward_lateral_correct",
++            "reward_lateral_velocity",
++            "reward_heading_align",
++            "reward_action_rate",
++            "reward_true_success",
++            "reward_true_fail",
++            "policy_loss",
++            "entropy",
++            "value_loss",
++            "ratio",
++            "actor_grad_norm",
++            "critic_grad_norm",
++            "attack_enabled",
++            "attack_level",
++            "attack_mode",
++            "attack_target_mode",
++            "attack_max_fdi_pos",
++            "attack_max_fdi_acc",
++            "attack_max_dos_rate",
++            "attack_late_obj_scale",
++            "attack_late_update_interval",
++            "fdi_abs_mean",
++            "dos_rate",
++            "obs_fdi_abs_mean",
++            "obs_dos_rate",
++            "obs_dos_budget",
++            "obs_drop_count",
++            "obs_elem_n",
++            "act_fdi_abs_mean",
++            "act_dos_rate",
++            "act_dos_budget",
++            "act_drop_count",
++            "act_elem_n",
++            "attack_objective",
++            "attack_g_loss",
++            "attack_d_loss",
++            "attack_realism_loss",
++            "attack_seq_realism_loss",
++            "attack_phy_ctx_norm",
++            "attack_ref_template_id",
++            "physical_cost",
++            "physical_spacing_cost",
++            "physical_velocity_cost",
++            "physical_acceleration_cost",
++            "physical_jerk_cost",
++            "physical_overspeed_cost",
++            "physical_lateral_cost",
++            "physical_heading_cost",
++            "physical_backward_cost",
++            "physical_forward_deficit_cost",
++            "physical_collision_cost",
++            "teacher_update_active",
++            "teacher_shaping_mean",
++            "teacher_loss",
++            "teacher_base_loss",
++            "teacher_delta_j",
++            "teacher_norm_delta_j",
++            "teacher_outer_coef_scale",
++            "teacher_outer_loss",
++            "teacher_advantage_corr",
++            "teacher_physical_adv_std",
++            "teacher_shaping_adv_std",
++            "teacher_window_samples",
++            "teacher_grad_norm",
++            "shield_warn_rate",
++            "shield_critical_rate",
++            "shield_trigger_rate",
++            "shield_scale_mean",
++            "shield_lateral_rate",
++            "shield_lateral_critical_rate",
++            "shield_lateral_turn_mean",
++        ]
+ 
+     def build_from_sample(self, obs: Any) -> PlatoonHAPPORunner | None:
+         """Build the selected algorithm from a reset observation sample.
+@@ -82,6 +203,16 @@ class PlatoonAlgorithmRouter:
+             return None
+         if self.algorithm != "happo":
+             raise ValueError(f"Unsupported platoon algorithm: {self.algorithm}")
++        if self.runner is not None and self.info is not None:
++            if (
++                self.info.obs_dim == obs_dim
++                and self.info.act_dim == act_dim
++                and self.info.share_obs_dim == share_obs_dim
++            ):
++                self.runner.buffer.set_initial_obs(agent_obs, share_obs)
++                if self.inference_only:
++                    self.runner.prep_rollout()
++                return self.runner
+ 
+         episode_length = int(getattr(self.runner_cfg, "num_steps_per_env", 32)) if self.runner_cfg is not None else 32
+         happo_cfg = PlatoonHAPPOCfg(
+@@ -95,6 +226,8 @@ class PlatoonAlgorithmRouter:
+             critic_lr=float(getattr(self.cfg, "happo_critic_lr", 1.0e-4)),
+             clip_param=float(getattr(self.cfg, "happo_clip_param", 0.1)),
+             ppo_epoch=int(getattr(self.cfg, "happo_ppo_epoch", 3)),
++            num_mini_batches=int(getattr(self.cfg, "happo_num_mini_batches", 16)),
++            factor_eval_chunk_size=int(getattr(self.cfg, "happo_factor_chunk_size", 4096)),
+             max_grad_norm=float(getattr(self.cfg, "happo_max_grad_norm", 0.5)),
+             device=str(self.device),
+         )
+@@ -112,31 +245,36 @@ class PlatoonAlgorithmRouter:
+         teacher = RewardTeacherModule(
+             RewardTeacherCfg(
+                 obs_dim=obs_dim,
+-                act_dim=act_dim * self.num_agents,
++                act_dim=act_dim,
+                 shaping_coef=float(getattr(self.cfg, "teacher_shaping_coef", 0.0)),
+                 lr=float(getattr(self.cfg, "teacher_lr", 1.0e-4)),
+                 update_interval=int(getattr(self.cfg, "teacher_update_interval", 5)),
+                 shaping_clip=float(getattr(self.cfg, "teacher_shaping_clip", 0.05)),
+                 action_penalty_coef=float(getattr(self.cfg, "teacher_action_penalty_coef", 0.0)),
+                 device=str(self.device),
+-            )
++            ),
++            env=self.env,
+         )
+-        attack_level = str(getattr(self.cfg, "attack_level", "medium")).lower()
++        attack_level = str(getattr(self.cfg, "attack_level", "off")).lower()
+         attack_presets = {
+             "off": {"enabled": False, "max_fdi_pos": 0.0, "max_fdi_acc": 0.0, "max_dos_rate": 0.0},
++            "light": {"enabled": True, "max_fdi_pos": 1.0, "max_fdi_acc": 0.10, "max_dos_rate": 0.02},
+             "easy": {"enabled": True, "max_fdi_pos": 2.0, "max_fdi_acc": 0.5, "max_dos_rate": 0.05},
+             "medium": {"enabled": True, "max_fdi_pos": 5.0, "max_fdi_acc": 1.5, "max_dos_rate": 0.15},
+             "hard": {"enabled": True, "max_fdi_pos": 8.0, "max_fdi_acc": 3.0, "max_dos_rate": 0.30},
+         }
+-        preset = attack_presets.get(attack_level, attack_presets["medium"])
++        if attack_level not in attack_presets:
++            valid = ", ".join(sorted(attack_presets))
++            raise ValueError(f"Unsupported attack_level={attack_level!r}. Valid attack levels: {valid}")
++        preset = attack_presets[attack_level]
+ 
+         # Override priority:
+         # 1) explicit cfg values if present and not None
+         # 2) level preset defaults
+         cfg_dict = getattr(self.cfg, "__dict__", {}) if self.cfg is not None else {}
+-        max_fdi_pos = cfg_dict.get("max_fdi_pos", None)
+-        max_fdi_acc = cfg_dict.get("max_fdi_acc", None)
+-        max_dos_rate = cfg_dict.get("max_dos_rate", None)
++        max_fdi_pos = self._optional_nonnegative_cfg(cfg_dict.get("max_fdi_pos", None))
++        max_fdi_acc = self._optional_nonnegative_cfg(cfg_dict.get("max_fdi_acc", None))
++        max_dos_rate = self._optional_nonnegative_cfg(cfg_dict.get("max_dos_rate", None))
+ 
+         attack_cfg = AttackModuleCfg(
+             max_fdi_pos=float(preset["max_fdi_pos"] if max_fdi_pos is None else max_fdi_pos),
+@@ -156,6 +294,13 @@ class PlatoonAlgorithmRouter:
+             attack_obj_coef=float(getattr(self.cfg, "attack_obj_coef", 1.0)),
+             reward_proxy_coef=float(getattr(self.cfg, "attack_reward_proxy_coef", 1.0)),
+             dos_proxy_coef=float(getattr(self.cfg, "attack_dos_proxy_coef", 0.3)),
++            attack_objective_clip=float(getattr(self.cfg, "attack_objective_clip", 20.0)),
++            curriculum_warmup_updates=int(getattr(self.cfg, "attack_curriculum_warmup_updates", 2000)),
++            curriculum_start_mode=str(getattr(self.cfg, "attack_curriculum_start_mode", "profile")),
++            decay_start_updates=int(getattr(self.cfg, "attack_decay_start_updates", 5000)),
++            min_attack_obj_scale=float(getattr(self.cfg, "attack_min_obj_scale", 0.25)),
++            min_update_freq_scale=float(getattr(self.cfg, "attack_min_update_freq_scale", 0.25)),
++            decay_half_life_updates=int(getattr(self.cfg, "attack_decay_half_life_updates", 2500)),
+         )
+         attacker = RandomFDIDoSAttackModule(attack_cfg) if attack_cfg.enabled else NoOpAttackModule(attack_cfg)
+         self._attack_config_text = (
+@@ -164,15 +309,25 @@ class PlatoonAlgorithmRouter:
+             f"max_fdi_acc={attack_cfg.max_fdi_acc:.3f}, "
+             f"max_dos_rate={attack_cfg.max_dos_rate:.3f}, "
+             f"target_mode={attack_cfg.target_mode}, mode={attack_cfg.mode}, seed={attack_cfg.seed}, "
++            f"curriculum=({attack_cfg.curriculum_start_mode}->{attack_cfg.mode}@{attack_cfg.curriculum_warmup_updates}), "
+             f"obj_coef={attack_cfg.attack_obj_coef:.3f}, "
+             f"reward_coef={attack_cfg.reward_proxy_coef:.3f}, "
+             f"dos_coef={attack_cfg.dos_proxy_coef:.3f}"
+         )
++        safety_cfg = getattr(getattr(self.env, "cfg", None), "safety_shield", None)
+         shield = BadHeadingShieldModule(
+             self.env,
+             BadHeadingShieldCfg(
+                 enabled=True,
+-                action_scale=float(getattr(self.cfg, "happo_bad_heading_action_scale", 0.2)),
++                d_crit=float(getattr(safety_cfg, "d_crit", 0.50)),
++                d_drop=float(getattr(safety_cfg, "d_drop", 1.20)),
++                brake_action=float(getattr(safety_cfg, "brake_action", 0.0)),
++                catchup_action=float(getattr(safety_cfg, "catchup_action", -0.35)),
++                lateral_tol=float(getattr(safety_cfg, "lateral_tol", 0.08)),
++                lateral_crit=float(getattr(safety_cfg, "lateral_crit", 0.35)),
++                lateral_turn_gain=float(getattr(safety_cfg, "lateral_turn_gain", 0.70)),
++                lateral_turn_clip=float(getattr(safety_cfg, "lateral_turn_clip", 0.18)),
++                lateral_velocity_gain=float(getattr(safety_cfg, "lateral_velocity_gain", 0.25)),
+             ),
+         )
+         self.pipeline = PlatoonTrainingPipeline(
+@@ -194,14 +349,71 @@ class PlatoonAlgorithmRouter:
+             self._printed_build = True
+         return self.runner
+ 
++    @staticmethod
++    def _optional_nonnegative_cfg(value: Any) -> float | None:
++        if value is None:
++            return None
++        try:
++            out = float(value)
++        except (TypeError, ValueError):
++            return None
++        return out if out >= 0.0 else None
++
++    def set_inference_mode(
++        self,
++        *,
++        deterministic: bool = True,
++        disable_updates: bool = True,
++        disable_attack: bool = True,
++    ) -> None:
++        """Configure task-local modules for play/evaluation."""
++        self.deterministic_actions = bool(deterministic)
++        self.inference_only = bool(disable_updates)
++        self.enable_eval_attack = not bool(disable_attack)
++        if self.pipeline is not None and disable_attack:
++            self.pipeline.flags.enable_attack = False
++        if self.runner is not None:
++            self.runner.prep_rollout()
++
++    def state_dict(self) -> dict:
++        """Return checkpoint state for task-local HAPPO modules."""
++        if self.runner is None:
++            return {}
++        return {
++            "version": 1,
++            "algorithm": self.algorithm,
++            "num_agents": self.num_agents,
++            "info": self.info.__dict__ if self.info is not None else None,
++            "happo_update_count": self.happo_update_count,
++            "happo_action_steps": self.happo_action_steps,
++            "runner": self.runner.state_dict(),
++        }
++
++    def load_state_dict(self, state: dict, strict: bool = True) -> None:
++        """Load checkpoint state for task-local HAPPO modules."""
++        if self.runner is None:
++            raise RuntimeError("HAPPO runner has not been built. Call build_from_sample() first.")
++        if not state or "runner" not in state:
++            raise ValueError("Checkpoint does not contain task-local HAPPO runner state.")
++        if int(state.get("num_agents", self.num_agents)) != self.num_agents:
++            raise ValueError(
++                f"HAPPO num_agents mismatch: checkpoint={state.get('num_agents')} current={self.num_agents}"
++            )
++        self.runner.load_state_dict(state["runner"], strict=strict)
++        self.happo_update_count = int(state.get("happo_update_count", self.happo_update_count))
++        self.happo_action_steps = int(state.get("happo_action_steps", self.happo_action_steps))
++        if self.runner is not None:
++            self.runner.prep_rollout()
++
+     def act(self, obs: Any, deterministic: bool = False) -> torch.Tensor:
+         """Produce flat IsaacLab actions from HAPPO for one rollout step."""
+         if self.runner is None:
+             raise RuntimeError("HAPPO runner has not been built. Call build_from_sample() first.")
+         agent_obs = self.to_agent_obs(obs)
++        deterministic = bool(deterministic or self.deterministic_actions)
+         if self.pipeline is not None:
+             student_obs = self.pipeline.preprocess_obs_for_student(agent_obs)
+-            joint_actions = self.pipeline.student.act(student_obs)
++            joint_actions = self.pipeline.student.act(student_obs, deterministic=deterministic)
+         else:
+             share_obs = merge_agent_obs(agent_obs)
+             joint_actions, joint_log_probs, values = self.runner.act(agent_obs, share_obs, deterministic=deterministic)
+@@ -220,7 +432,7 @@ class PlatoonAlgorithmRouter:
+ 
+     def observe_step(self, next_obs: Any, rewards: Any, dones: Any) -> None:
+         """Insert one transition into the HAPPO rollout buffer."""
+-        if self.runner is None:
++        if self.runner is None or self.inference_only:
+             return
+         if self.pipeline is None:
+             required = ("_last_joint_actions", "_last_joint_log_probs", "_last_values")
+@@ -280,11 +492,13 @@ class PlatoonAlgorithmRouter:
+                             f"d_loss={float(atk_info.get('attack_d_loss', 0.0)):.4f}, "
+                             f"realism_loss={float(atk_info.get('attack_realism_loss', 0.0)):.4f}, "
+                             f"seq_realism={float(atk_info.get('attack_seq_realism_loss', 0.0)):.4f}, "
+-                            f"obj_proxy={float(atk_info.get('attack_obj_proxy', 0.0)):.4f}, "
++                            f"obj_att={float(atk_info.get('attack_objective', 0.0)):.4f}, "
+                             f"obj_s={float(atk_info.get('obj_spacing', 0.0)):.4f}, "
+                             f"obj_v={float(atk_info.get('obj_vel', 0.0)):.4f}, "
+                             f"obj_a={float(atk_info.get('obj_acc', 0.0)):.4f}, "
+                             f"obj_j={float(atk_info.get('obj_jerk', 0.0)):.4f}, "
++                            f"obj_phy={float(atk_info.get('obj_physical_cost', 0.0)):.4f}, "
++                            f"obj_col={float(atk_info.get('obj_collision', 0.0)):.4f}, "
+                             f"obj_bd={float(atk_info.get('obj_bad_done', 0.0)):.4f}, "
+                             f"obj_en={float(atk_info.get('obj_energy', 0.0)):.4f}, "
+                             f"phy_ctx={float(atk_info.get('attack_phy_ctx_norm', 0.0)):.4f}, "
+@@ -322,6 +536,7 @@ class PlatoonAlgorithmRouter:
+                                 f"trigger_rate={float(shield_stats.get('shield_trigger_rate', 0.0)):.4f}, "
+                                 f"scale_mean={float(shield_stats.get('shield_scale_mean', 1.0)):.4f}"
+                             )
++                self._write_metrics_csv_row(update_info, logs, rewards_tensor, dones_tensor)
+         else:
+             next_share_obs = merge_agent_obs(next_agent_obs)
+             self.runner.buffer.insert(
+@@ -348,9 +563,271 @@ class PlatoonAlgorithmRouter:
+     def ready_to_train(self) -> bool:
+         return self.runner is not None and self.runner.buffer.step == 0
+ 
++    def _ensure_metrics_csv(self) -> csv.DictWriter | None:
++        if self._metrics_csv_writer is not None:
++            return self._metrics_csv_writer
++        log_dir = getattr(getattr(self.env, "cfg", None), "log_dir", None)
++        if log_dir is None:
++            log_dir = Path.cwd() / "logs" / "platoon_metrics"
++        log_dir = Path(log_dir)
++        log_dir.mkdir(parents=True, exist_ok=True)
++        self._metrics_csv_path = log_dir / "platoon_metrics.csv"
++        self._metrics_csv_file = self._metrics_csv_path.open("w", newline="")
++        self._metrics_csv_writer = csv.DictWriter(self._metrics_csv_file, fieldnames=self._metrics_fieldnames)
++        self._metrics_csv_writer.writeheader()
++        print(f"[Platoon Metrics] writing CSV to: {self._metrics_csv_path}")
++        return self._metrics_csv_writer
++
++    def _write_metrics_csv_row(
++        self,
++        update_info: dict[str, float] | None,
++        logs: dict[str, Any] | None,
++        rewards_tensor: torch.Tensor,
++        dones_tensor: torch.Tensor,
++    ) -> None:
++        writer = self._ensure_metrics_csv()
++        if writer is None:
++            return
++        logs = logs or {}
++        row: dict[str, Any] = {key: "" for key in self._metrics_fieldnames}
++        row.update(self._collect_platoon_metrics(rewards_tensor, dones_tensor))
++        row.update(self._collect_reward_term_metrics())
++        row.update(self._collect_termination_metrics())
++        row.update(self._collect_update_metrics(update_info or {}))
++        row.update(self._collect_attack_metrics(logs.get("attacker_update")))
++        row.update(self._collect_teacher_metrics(logs.get("teacher_update")))
++        row.update(self._collect_shield_metrics())
++        writer.writerow({key: row.get(key, "") for key in self._metrics_fieldnames})
++        if self._metrics_csv_file is not None:
++            self._metrics_csv_file.flush()
++
++    def _collect_platoon_metrics(self, rewards_tensor: torch.Tensor, dones_tensor: torch.Tensor) -> dict[str, Any]:
++        metrics: dict[str, Any] = {
++            "update": self.happo_update_count,
++            "env_step": int(getattr(self.env, "common_step_counter", self.rollout_steps)),
++            "sim_time_s": float(getattr(self.env, "common_step_counter", self.rollout_steps))
++            * float(getattr(self.env, "step_dt", 0.0)),
++            "num_envs": self.num_envs,
++            "num_agents": self.num_agents,
++            "reward_env_mean": float(rewards_tensor.mean().item()),
++            "done_rate": float(dones_tensor.float().mean().item()),
++        }
++        robots = ["robot", "robot_2", "robot_3", "robot_4", "robot_5", "robot_6"][: self.num_agents]
++        try:
++            command = self.env.command_manager.get_command("base_velocity").to(self.device)
++            command_speed = command[:, 0]
++            metrics["command_speed_mean"] = float(command_speed.mean().item())
++        except Exception:
++            command_speed = torch.zeros(self.num_envs, device=self.device)
++            metrics["command_speed_mean"] = 0.0
++
++        try:
++            speeds = torch.stack([self.env.scene[name].data.root_lin_vel_b[:, 0].to(self.device) for name in robots], dim=1)
++            metrics["leader_speed_mean"] = float(speeds[:, 0].mean().item())
++            metrics["platoon_speed_mean"] = float(speeds.mean().item())
++            metrics["leader_speed_error_mean"] = float((command_speed - speeds[:, 0]).mean().item())
++            metrics["speed_error_abs_mean"] = float((command_speed.view(-1, 1) - speeds).abs().mean().item())
++        except Exception:
++            speeds = None
++
++        gap_errors = []
++        lateral_errors = []
++        pair_gaps = []
++        pair_heading_errors = []
++        try:
++            target_dir = torch.tensor([1.0, 0.0, 0.0], device=self.device).repeat(self.num_envs, 1)
++            heading_vecs = [
++                torch.nn.functional.normalize(
++                    quat_apply(self.env.scene[name].data.root_quat_w.to(self.device), target_dir)[:, :2],
++                    dim=-1,
++                )
++                for name in robots
++            ]
++            heading_x = torch.stack([heading[:, 0] for heading in heading_vecs], dim=1).clamp(-1.0, 1.0)
++            heading_error = torch.acos(heading_x)
++            metrics["heading_error_abs_mean"] = float(heading_error.abs().mean().item())
++            metrics["heading_error_abs_max"] = float(heading_error.abs().max().item())
++
++            for idx in range(1, len(robots)):
++                pred = self.env.scene[robots[idx - 1]]
++                foll = self.env.scene[robots[idx]]
++                diff = foll.data.root_pos_w.to(self.device) - pred.data.root_pos_w.to(self.device)
++                rel = quat_apply_inverse(pred.data.root_quat_w.to(self.device), diff)
++                follower_speed = torch.clamp(foll.data.root_lin_vel_b[:, 0].to(self.device), min=0.0)
++                desired_gap = 1.5 + 0.6 * follower_speed
++                gap_errors.append(rel[:, 0] + desired_gap)
++                lateral_errors.append(rel[:, 1])
++                pair_gaps.append(torch.norm(diff[:, :2], dim=1))
++                pair_dot = torch.sum(heading_vecs[idx - 1] * heading_vecs[idx], dim=-1).clamp(-1.0, 1.0)
++                pair_heading_errors.append(torch.acos(pair_dot))
++            if gap_errors:
++                gap_error = torch.stack(gap_errors, dim=1)
++                lateral_error = torch.stack(lateral_errors, dim=1)
++                pair_gap = torch.stack(pair_gaps, dim=1)
++                pair_heading_error = torch.stack(pair_heading_errors, dim=1)
++                metrics["gap_error_mean"] = float(gap_error.mean().item())
++                metrics["gap_error_abs_mean"] = float(gap_error.abs().mean().item())
++                metrics["gap_error_max_abs"] = float(gap_error.abs().max().item())
++                metrics["lateral_error_abs_mean"] = float(lateral_error.abs().mean().item())
++                metrics["lateral_error_abs_max"] = float(lateral_error.abs().max().item())
++                lateral_pair_abs = lateral_error.abs().mean(dim=0)
++                worst_pair = int(torch.argmax(lateral_pair_abs).item()) + 1
++                metrics["lateral_worst_pair"] = worst_pair
++                for pair_idx in range(min(5, lateral_pair_abs.numel())):
++                    metrics[f"lateral_pair_{pair_idx + 1}_abs_mean"] = float(lateral_pair_abs[pair_idx].item())
++                metrics["pair_heading_error_abs_mean"] = float(pair_heading_error.abs().mean().item())
++                metrics["pair_heading_error_abs_max"] = float(pair_heading_error.abs().max().item())
++                metrics["min_pair_gap_mean"] = float(pair_gap.min(dim=1).values.mean().item())
++                metrics["collision_rate"] = float((pair_gap < 0.30).float().mean().item())
++        except Exception:
++            pass
++
++        try:
++            actions = self.pipeline.student.pending_actions if self.pipeline is not None else None
++            if actions is not None:
++                metrics["action_abs_mean"] = float(actions.abs().mean().item())
++                metrics["leader_action_abs_mean"] = float(actions[:, 0, :].abs().mean().item())
++        except Exception:
++            pass
++        return metrics
++
++    def _collect_reward_term_metrics(self) -> dict[str, Any]:
++        reward_manager = getattr(self.env, "reward_manager", None)
++        term_names = getattr(reward_manager, "_term_names", [])
++        step_reward = getattr(reward_manager, "_step_reward", None)
++        if step_reward is None or not term_names:
++            return {}
++        wanted = {
++            "leader_motion",
++            "leader_progress",
++            "formation",
++            "collision_risk",
++            "forward_drive",
++            "stall_penalty",
++            "lateral_correct",
++            "lateral_velocity",
++            "heading_align",
++            "action_rate",
++            "true_success",
++            "true_fail",
++        }
++        metrics: dict[str, Any] = {}
++        for idx, name in enumerate(term_names):
++            if name in wanted:
++                metrics[f"reward_{name}"] = float(step_reward[:, idx].mean().item())
++        return metrics
++
++    def _collect_termination_metrics(self) -> dict[str, Any]:
++        termination_manager = getattr(self.env, "termination_manager", None)
++        term_names = getattr(termination_manager, "_term_names", [])
++        last_episode_dones = getattr(termination_manager, "_last_episode_dones", None)
++        if last_episode_dones is None or not term_names:
++            return {}
++        metrics: dict[str, Any] = {}
++        for idx, name in enumerate(term_names):
++            if name in {"time_out", "reset_on_bad_ori"}:
++                metrics[f"termination_{name}"] = float(last_episode_dones[:, idx].float().mean().item())
++        return metrics
++
++    def _collect_update_metrics(self, update_info: dict[str, float]) -> dict[str, Any]:
++        return {
++            "policy_loss": float(update_info.get("policy_loss", 0.0)),
++            "entropy": float(update_info.get("dist_entropy", update_info.get("entropy", 0.0))),
++            "value_loss": float(update_info.get("value_loss", 0.0)),
++            "ratio": float(update_info.get("ratio", 0.0)),
++            "actor_grad_norm": float(update_info.get("actor_grad_norm", 0.0)),
++            "critic_grad_norm": float(update_info.get("critic_grad_norm", 0.0)),
++        }
++
++    def _collect_attack_metrics(self, attack_info: Any) -> dict[str, Any]:
++        attacker = self.pipeline.attacker if self.pipeline is not None else None
++        cfg = getattr(attacker, "cfg", None)
++        info = attack_info if isinstance(attack_info, dict) else {}
++        return {
++            "attack_enabled": float(info.get("attack_enabled", float(getattr(cfg, "enabled", 0.0)))),
++            "attack_level": str(getattr(self.cfg, "attack_level", "")),
++            "attack_mode": str(info.get("attack_mode", getattr(attacker, "_runtime_mode", getattr(cfg, "mode", "")))),
++            "attack_target_mode": str(getattr(cfg, "target_mode", "")),
++            "attack_max_fdi_pos": float(getattr(cfg, "max_fdi_pos", 0.0)),
++            "attack_max_fdi_acc": float(getattr(cfg, "max_fdi_acc", 0.0)),
++            "attack_max_dos_rate": float(getattr(cfg, "max_dos_rate", 0.0)),
++            "attack_late_obj_scale": float(info.get("attack_late_obj_scale", 0.0)),
++            "attack_late_update_interval": float(info.get("attack_late_update_interval", 0.0)),
++            "fdi_abs_mean": float(info.get("fdi_abs_mean", getattr(attacker, "last_fdi_mean", 0.0))),
++            "dos_rate": float(info.get("dos_rate", getattr(attacker, "last_dos_rate", 0.0))),
++            "obs_fdi_abs_mean": float(info.get("obs_fdi_abs_mean", getattr(attacker, "last_obs_fdi_mean", 0.0))),
++            "obs_dos_rate": float(info.get("obs_dos_rate", getattr(attacker, "last_obs_dos_rate", 0.0))),
++            "obs_dos_budget": float(info.get("obs_dos_budget", getattr(attacker, "last_obs_dos_budget", 0.0))),
++            "obs_drop_count": float(info.get("obs_drop_count", getattr(attacker, "last_obs_drop_count", 0.0))),
++            "obs_elem_n": float(info.get("obs_elem_n", getattr(attacker, "last_obs_elem_n", 0.0))),
++            "act_fdi_abs_mean": float(info.get("act_fdi_abs_mean", getattr(attacker, "last_act_fdi_mean", 0.0))),
++            "act_dos_rate": float(info.get("act_dos_rate", getattr(attacker, "last_act_dos_rate", 0.0))),
++            "act_dos_budget": float(info.get("act_dos_budget", getattr(attacker, "last_act_dos_budget", 0.0))),
++            "act_drop_count": float(info.get("act_drop_count", getattr(attacker, "last_act_drop_count", 0.0))),
++            "act_elem_n": float(info.get("act_elem_n", getattr(attacker, "last_act_elem_n", 0.0))),
++            "attack_objective": float(info.get("attack_objective", getattr(attacker, "last_attack_obj", 0.0))),
++            "attack_g_loss": float(info.get("attack_g_loss", getattr(attacker, "last_g_loss", 0.0))),
++            "attack_d_loss": float(info.get("attack_d_loss", getattr(attacker, "last_d_loss", 0.0))),
++            "attack_realism_loss": float(info.get("attack_realism_loss", getattr(attacker, "last_realism_loss", 0.0))),
++            "attack_seq_realism_loss": float(info.get("attack_seq_realism_loss", getattr(attacker, "last_seq_realism_loss", 0.0))),
++            "attack_phy_ctx_norm": float(info.get("attack_phy_ctx_norm", 0.0)),
++            "attack_ref_template_id": str(info.get("attack_ref_template_id", getattr(attacker, "last_ref_template_id", ""))),
++        }
++
++    def _collect_teacher_metrics(self, teacher_info: Any) -> dict[str, Any]:
++        teacher = self.pipeline.teacher if self.pipeline is not None else None
++        info = teacher_info if isinstance(teacher_info, dict) else {}
++        physical_context = teacher.get_physical_attack_context() if hasattr(teacher, "get_physical_attack_context") else {}
++        metrics = {
++            "teacher_update_active": 1.0 if isinstance(teacher_info, dict) else 0.0,
++            "teacher_shaping_mean": float(info.get("teacher_shaping_mean", getattr(teacher, "last_shaping_mean", 0.0))),
++            "teacher_loss": float(info.get("teacher_loss", getattr(teacher, "last_teacher_loss", 0.0))),
++            "teacher_base_loss": float(info.get("teacher_base_loss", 0.0)),
++            "teacher_delta_j": float(info.get("teacher_delta_j", 0.0)),
++            "teacher_norm_delta_j": float(info.get("teacher_norm_delta_j", 0.0)),
++            "teacher_outer_coef_scale": float(info.get("teacher_outer_coef_scale", 0.0)),
++            "teacher_outer_loss": float(info.get("teacher_outer_loss", 0.0)),
++            "teacher_advantage_corr": float(info.get("teacher_advantage_corr", 0.0)),
++            "teacher_physical_adv_std": float(info.get("teacher_physical_adv_std", 0.0)),
++            "teacher_shaping_adv_std": float(info.get("teacher_shaping_adv_std", 0.0)),
++            "teacher_window_samples": float(info.get("teacher_window_samples", 0.0)),
++            "teacher_grad_norm": float(info.get("teacher_grad_norm", 0.0)),
++        }
++        for key in (
++            "physical_cost",
++            "physical_spacing_cost",
++            "physical_velocity_cost",
++            "physical_acceleration_cost",
++            "physical_jerk_cost",
++            "physical_overspeed_cost",
++            "physical_lateral_cost",
++            "physical_heading_cost",
++            "physical_backward_cost",
++            "physical_forward_deficit_cost",
++            "physical_collision_cost",
++        ):
++            metrics[key] = float(physical_context.get(key, 0.0))
++        return metrics
++
++    def _collect_shield_metrics(self) -> dict[str, Any]:
++        if self.pipeline is None or not hasattr(self.pipeline.shield, "get_stats"):
++            return {}
++        stats = self.pipeline.shield.get_stats()
++        if not isinstance(stats, dict):
++            return {}
++        return {
++            "shield_warn_rate": float(stats.get("shield_warn_rate", 0.0)),
++            "shield_critical_rate": float(stats.get("shield_critical_rate", 0.0)),
++            "shield_trigger_rate": float(stats.get("shield_trigger_rate", 0.0)),
++            "shield_scale_mean": float(stats.get("shield_scale_mean", 1.0)),
++            "shield_lateral_rate": float(stats.get("shield_lateral_rate", 0.0)),
++            "shield_lateral_critical_rate": float(stats.get("shield_lateral_critical_rate", 0.0)),
++            "shield_lateral_turn_mean": float(stats.get("shield_lateral_turn_mean", 0.0)),
++        }
++
+     def train_if_ready(self, next_obs: Any) -> tuple[list[dict[str, float]], dict[str, float]] | None:
+         """Run one HAPPO update when a rollout segment is full."""
+-        if self.runner is None or not self.ready_to_train():
++        if self.inference_only or self.runner is None or not self.ready_to_train():
+             return None
+         with torch.inference_mode(False), torch.enable_grad():
+             next_share_obs = merge_agent_obs(self.to_agent_obs(next_obs)).detach().clone()
+diff --git a/source/my_exts/marl_platoon/algorithms/shield.py b/source/my_exts/marl_platoon/algorithms/shield.py
+index 3d6c1fc..9c46c29 100644
+--- a/source/my_exts/marl_platoon/algorithms/shield.py
++++ b/source/my_exts/marl_platoon/algorithms/shield.py
+@@ -5,7 +5,7 @@ from __future__ import annotations
+ from dataclasses import dataclass
+ 
+ import torch
+-from isaaclab.utils.math import quat_apply
++from isaaclab.utils.math import quat_apply_inverse
+ 
+ from marl_platoon.algorithms.pipeline import ShieldModule
+ 
+@@ -13,19 +13,35 @@ from marl_platoon.algorithms.pipeline import ShieldModule
+ @dataclass
+ class BadHeadingShieldCfg:
+     enabled: bool = False
+-    action_scale: float = 0.2
+-    heading_warn_threshold: float = 0.35
+-    heading_critical_threshold: float = 0.20
+-    warn_scale: float = 0.5
++    d_crit: float = 0.50
++    d_drop: float = 1.20
++    brake_action: float = 0.0
++    catchup_action: float = -0.35
++    delta_v: float = 0.05
++    lateral_tol: float = 0.08
++    lateral_crit: float = 0.35
++    lateral_turn_gain: float = 0.70
++    lateral_turn_clip: float = 0.18
++    lateral_velocity_gain: float = 0.25
+ 
+ 
+ class BadHeadingShieldModule(ShieldModule):
+-    """Lightweight safety guard used as the current shield placeholder."""
++    """Training-time distance and lane-center action projection.
++
++    The class name is kept for config compatibility, but the implementation is
++    now the paper-style safety shield:
++
++    - if a follower is too close to its predecessor, project to a braking action;
++    - if it is dropping out and not already faster than its predecessor, project
++      to a mild catch-up action;
++    - if it drifts laterally from the predecessor centerline, add a bounded
++      differential-drive steering correction before the URDF wheel-axis adapter.
++    """
+ 
+     def __init__(self, env, cfg: BadHeadingShieldCfg | None = None):
+         self.env = env
+         self.cfg = cfg or BadHeadingShieldCfg()
+-        self.robots = ["robot", "robot_2", "robot_3", "robot_4"]
++        self.robots = ["robot", "robot_2", "robot_3", "robot_4", "robot_5", "robot_6"]
+ 
+         # Runtime stats (aggregated over calls) for logging.
+         self.calls = 0
+@@ -34,48 +50,109 @@ class BadHeadingShieldModule(ShieldModule):
+         self.trigger_count = 0
+         self.scale_sum = 0.0
+         self.scale_samples = 0
++        self.lateral_count = 0
++        self.lateral_critical_count = 0
++        self.lateral_turn_abs_sum = 0.0
++        self.lateral_turn_samples = 0
+ 
+     def project_action(self, obs: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+         self.calls += 1
+         if not self.cfg.enabled:
+             return actions
+-        target_dir = torch.tensor([1.0, 0.0, 0.0], device=self.env.device).repeat(self.env.num_envs, 1)
+-        min_heading_x = torch.ones(self.env.num_envs, device=self.env.device)
+-        for name in self.robots:
+-            quat = self.env.scene[name].data.root_quat_w
+-            heading = quat_apply(quat, target_dir)
+-            min_heading_x = torch.minimum(min_heading_x, heading[:, 0])
+-
+-        critical_mask = min_heading_x < self.cfg.heading_critical_threshold
+-        warn_mask = (min_heading_x < self.cfg.heading_warn_threshold) & (~critical_mask)
++        if actions.dim() != 3:
++            return actions
+ 
+-        warn_n = int(warn_mask.sum().item())
+-        critical_n = int(critical_mask.sum().item())
+-        total_n = int(min_heading_x.shape[0])
++        guarded = actions.clone()
++        num_envs = guarded.shape[0]
++        warn_any = torch.zeros(num_envs, device=self.env.device, dtype=torch.bool)
++        critical_any = torch.zeros_like(warn_any)
++        lateral_any = torch.zeros_like(warn_any)
++        lateral_critical_any = torch.zeros_like(warn_any)
++
++        for agent_id in range(1, min(len(self.robots), guarded.shape[1])):
++            pred_name = self.robots[agent_id - 1]
++            foll_name = self.robots[agent_id]
++            pred = self.env.scene[pred_name]
++            foll = self.env.scene[foll_name]
++
++            rel_world = pred.data.root_pos_w - foll.data.root_pos_w
++            rel_local = quat_apply_inverse(pred.data.root_quat_w, rel_world)
++            gap = rel_local[:, 0].abs()
++            pred_v = pred.data.root_lin_vel_b[:, 0]
++            foll_v = foll.data.root_lin_vel_b[:, 0]
++
++            brake_mask = gap <= self.cfg.d_crit
++            catchup_mask = (gap >= self.cfg.d_drop) & (foll_v <= pred_v + self.cfg.delta_v) & (~brake_mask)
++
++            if brake_mask.any():
++                guarded[brake_mask, agent_id, :] = float(self.cfg.brake_action)
++            if catchup_mask.any():
++                guarded[catchup_mask, agent_id, :] = float(self.cfg.catchup_action)
++
++            critical_any |= brake_mask
++            warn_any |= catchup_mask
++
++            if guarded.shape[-1] == 4 and self.cfg.lateral_turn_clip > 0.0 and self.cfg.lateral_turn_gain > 0.0:
++                follower_from_pred = quat_apply_inverse(
++                    pred.data.root_quat_w,
++                    foll.data.root_pos_w - pred.data.root_pos_w,
++                )
++                lateral_offset = follower_from_pred[:, 1]
++                lateral_rate = torch.zeros_like(lateral_offset)
++                pred_vel_w = getattr(pred.data, "root_lin_vel_w", None)
++                foll_vel_w = getattr(foll.data, "root_lin_vel_w", None)
++                if pred_vel_w is not None and foll_vel_w is not None:
++                    rel_vel_local = quat_apply_inverse(pred.data.root_quat_w, foll_vel_w - pred_vel_w)
++                    lateral_rate = rel_vel_local[:, 1]
++
++                lateral_signal = lateral_offset + float(self.cfg.lateral_velocity_gain) * lateral_rate
++                lateral_mask = (torch.abs(lateral_offset) > self.cfg.lateral_tol) & (~brake_mask)
++                lateral_critical_mask = torch.abs(lateral_offset) > self.cfg.lateral_crit
++                turn = torch.clamp(
++                    float(self.cfg.lateral_turn_gain) * lateral_signal,
++                    min=-float(self.cfg.lateral_turn_clip),
++                    max=float(self.cfg.lateral_turn_clip),
++                )
++                turn = torch.where(lateral_mask, turn, torch.zeros_like(turn))
++
++                if lateral_mask.any():
++                    # Pre-adapter convention: more-negative same-sign wheel
++                    # commands drive forward. Positive lateral offset means the
++                    # follower is left of its predecessor, so left wheels get
++                    # more forward command and right wheels less forward command.
++                    guarded[:, agent_id, 0:2] -= turn.unsqueeze(-1)
++                    guarded[:, agent_id, 2:4] += turn.unsqueeze(-1)
++                    self.lateral_turn_abs_sum += float(turn[lateral_mask].abs().sum().item())
++                    self.lateral_turn_samples += int(lateral_mask.sum().item())
++
++                lateral_any |= lateral_mask
++                lateral_critical_any |= lateral_critical_mask
++                warn_any |= lateral_mask
++                critical_any |= lateral_critical_mask
++
++        warn_n = int(warn_any.sum().item())
++        critical_n = int(critical_any.sum().item())
++        total_n = int(num_envs)
+ 
+         self.warn_count += warn_n
+         self.critical_count += critical_n
+         self.trigger_count += int((warn_n + critical_n) > 0)
+         self.scale_samples += total_n
+-        self.scale_sum += warn_n * float(self.cfg.warn_scale) + critical_n * float(self.cfg.action_scale)
+-        self.scale_sum += (total_n - warn_n - critical_n) * 1.0
+-
+-        if not (critical_mask.any() or warn_mask.any()):
+-            return actions
+-
+-        guarded = actions.clone()
+-        if warn_mask.any() and self.cfg.warn_scale > 0.0:
+-            guarded[warn_mask] = guarded[warn_mask] * self.cfg.warn_scale
+-        if critical_mask.any() and self.cfg.action_scale > 0.0:
+-            guarded[critical_mask] = guarded[critical_mask] * self.cfg.action_scale
++        self.scale_sum += float(guarded.abs().mean().item()) * total_n
++        self.lateral_count += int(lateral_any.sum().item())
++        self.lateral_critical_count += int(lateral_critical_any.sum().item())
+         return guarded
+ 
+     def get_stats(self) -> dict[str, float]:
+         calls = max(self.calls, 1)
+         samples = max(self.scale_samples, 1)
++        lateral_turn_samples = max(self.lateral_turn_samples, 1)
+         return {
+             "shield_warn_rate": float(self.warn_count / samples),
+             "shield_critical_rate": float(self.critical_count / samples),
+             "shield_trigger_rate": float(self.trigger_count / calls),
+             "shield_scale_mean": float(self.scale_sum / samples),
++            "shield_lateral_rate": float(self.lateral_count / samples),
++            "shield_lateral_critical_rate": float(self.lateral_critical_count / samples),
++            "shield_lateral_turn_mean": float(self.lateral_turn_abs_sum / lateral_turn_samples),
+         }
+diff --git a/source/my_exts/marl_platoon/algorithms/student.py b/source/my_exts/marl_platoon/algorithms/student.py
+index f478526..030aed6 100644
+--- a/source/my_exts/marl_platoon/algorithms/student.py
++++ b/source/my_exts/marl_platoon/algorithms/student.py
+@@ -10,7 +10,12 @@ from marl_platoon.harl_adapter import merge_agent_obs
+ 
+ 
+ class HAPPOStudentModule(StudentModule):
+-    """Adapter that wraps `PlatoonHAPPORunner` as a pipeline student module."""
++    """Lower-level Student optimizer for the paper's MGRS pipeline.
++
++    The Student does not design or alter rewards. It receives the shaped
++    lower-level reward R_phi = r_env + F_phi from the pipeline/Teacher and uses
++    HAPPO as the practical HATRL-style sequential policy optimizer.
++    """
+ 
+     def __init__(self, runner: PlatoonHAPPORunner):
+         self.runner = runner
+@@ -31,9 +36,9 @@ class HAPPOStudentModule(StudentModule):
+             raise RuntimeError("HAPPO student has no pending actions.")
+         return self._pending_actions
+ 
+-    def act(self, obs: torch.Tensor) -> torch.Tensor:
++    def act(self, obs: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
+         share_obs = merge_agent_obs(obs)
+-        joint_actions, joint_log_probs, values = self.runner.act(obs, share_obs)
++        joint_actions, joint_log_probs, values = self.runner.act(obs, share_obs, deterministic=deterministic)
+         self._pending_actions = joint_actions
+         self._pending_log_probs = joint_log_probs
+         self._pending_values = values
+@@ -42,6 +47,10 @@ class HAPPOStudentModule(StudentModule):
+     def observe(self, batch: StepBatch) -> None:
+         if not self.has_pending_action:
+             raise RuntimeError("HAPPO student has no pending action. Call act() before observe().")
++        # batch.rewards is already the paper lower-level reward
++        # R_phi(tilde_y_i, u_i) = r_env + F_phi(tilde_y_i, u_i), produced by the
++        # pipeline/Teacher before Student observation. The Student only stores it
++        # and performs policy optimization.
+         self._last_next_obs = batch.next_obs
+         self.runner.buffer.insert(
+             batch.next_obs,
+diff --git a/source/my_exts/marl_platoon/algorithms/teacher.py b/source/my_exts/marl_platoon/algorithms/teacher.py
+index da85bb8..0657526 100644
+--- a/source/my_exts/marl_platoon/algorithms/teacher.py
++++ b/source/my_exts/marl_platoon/algorithms/teacher.py
+@@ -6,6 +6,7 @@ from dataclasses import dataclass
+ from typing import Any
+ 
+ import torch
++from isaaclab.utils.math import quat_apply_inverse
+ 
+ from marl_platoon.algorithms.pipeline import TeacherModule
+ from marl_platoon.tasks.platoon.teacher import RewardTeacher
+@@ -23,12 +24,29 @@ class RewardTeacherCfg:
+     action_penalty_coef: float = 0.0
+     reward_ema_tau: float = 0.97
+     consistency_coef: float = 0.05
+-    no_backward_coef: float = 0.10
+-    forward_drive_coef: float = 0.10
++    physical_cost_clip: float = 50.0
++    target_adv_clip: float = 5.0
++    outer_loss_clip: float = 10.0
++    no_backward_coef: float = 0.0
++    forward_drive_coef: float = 0.0
+     forward_drive_target: float = 0.10
+-    outer_delta_coef: float = 0.10
++    outer_delta_coef: float = 0.02
+     outer_delta_warmup_updates: int = 20
+     outer_delta_ramp_updates: int = 50
++    target_gap: float = 1.50
++    headway: float = 0.60
++    collision_gap: float = 0.30
++    lambda_spacing: float = 1.0
++    lambda_velocity: float = 0.5
++    lambda_acceleration: float = 0.25
++    lambda_jerk: float = 0.10
++    lambda_overspeed: float = 0.25
++    lambda_lateral: float = 0.5
++    lambda_heading: float = 2.0
++    lambda_backward: float = 1.0
++    lambda_forward_deficit: float = 0.5
++    lambda_collision: float = 10.0
++    lambda_action_energy: float = 0.02
+ 
+ 
+ class RewardTeacherModule(TeacherModule):
+@@ -38,8 +56,9 @@ class RewardTeacherModule(TeacherModule):
+     optimization loop so the module can learn rather than stay random.
+     """
+ 
+-    def __init__(self, cfg: RewardTeacherCfg):
++    def __init__(self, cfg: RewardTeacherCfg, env: Any | None = None):
+         self.cfg = cfg
++        self.env = env
+         self.device = torch.device(cfg.device)
+         self.model = RewardTeacher(obs_dim=cfg.obs_dim, act_dim=cfg.act_dim).to(self.device)
+         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.lr)
+@@ -63,12 +82,179 @@ class RewardTeacherModule(TeacherModule):
+         self._reward_ema: torch.Tensor | None = None
+         self._delta_j_ema = 0.0
+         self._delta_j_var_ema = 1.0
++        self.robots = ["robot", "robot_2", "robot_3", "robot_4", "robot_5", "robot_6"]
++        self._prev_clean_vel: torch.Tensor | None = None
++        self._prev_clean_acc: torch.Tensor | None = None
++        self._prev_actions_for_score: torch.Tensor | None = None
++        self._last_physical_context: dict[str, float] = {}
++
++    def _compute_clean_physical_score(self, actions: torch.Tensor, rewards: torch.Tensor) -> torch.Tensor:
++        """Compute a clean-state platoon physical score during centralized training."""
++        if actions.dim() == 2:
++            if rewards.dim() == 3:
++                num_agents = rewards.shape[1]
++            else:
++                num_agents = len(self.robots)
++            actions_3d = actions.view(actions.shape[0], num_agents, -1)
++        else:
++            actions_3d = actions
++
++        if self.env is None or not hasattr(self.env, "scene"):
++            reward_term = rewards if rewards.dim() == 3 else rewards.view(actions_3d.shape[0], 1, 1)
++            if reward_term.shape[1] == 1 and actions_3d.shape[1] > 1:
++                reward_term = reward_term.repeat(1, actions_3d.shape[1], 1)
++            proxy_cost = (-reward_term).mean().clamp_min(0.0)
++            self._last_physical_context = {
++                "physical_cost": float(proxy_cost.item()),
++                "physical_spacing_cost": float(proxy_cost.item()),
++                "physical_velocity_cost": 0.0,
++                "physical_acceleration_cost": 0.0,
++                "physical_jerk_cost": 0.0,
++                "physical_overspeed_cost": 0.0,
++                "physical_collision_cost": 0.0,
++            }
++            return (-proxy_cost).view(actions_3d.shape[0], actions_3d.shape[1], 1)
++
++        num_envs = actions_3d.shape[0]
++        num_agents = actions_3d.shape[1]
++        physical_cost = torch.zeros(num_envs, num_agents, device=self.device)
++        spacing_metric = torch.zeros(num_envs, device=self.device)
++        velocity_metric = torch.zeros_like(spacing_metric)
++        acceleration_metric = torch.zeros_like(spacing_metric)
++        jerk_metric = torch.zeros_like(spacing_metric)
++        overspeed_metric = torch.zeros_like(spacing_metric)
++        lateral_metric = torch.zeros_like(spacing_metric)
++        heading_metric = torch.zeros_like(spacing_metric)
++        backward_metric = torch.zeros_like(spacing_metric)
++        forward_deficit_metric = torch.zeros_like(spacing_metric)
++        collision_metric = torch.zeros_like(spacing_metric)
++
++        clean_vel = []
++        for name in self.robots[:num_agents]:
++            clean_vel.append(self.env.scene[name].data.root_lin_vel_b[:, 0].to(self.device))
++        clean_vel_t = torch.stack(clean_vel, dim=1)
++        if self._prev_clean_vel is None or self._prev_clean_vel.shape != clean_vel_t.shape:
++            clean_acc_t = torch.zeros_like(clean_vel_t)
++        else:
++            clean_acc_t = clean_vel_t - self._prev_clean_vel
++        if self._prev_clean_acc is None or self._prev_clean_acc.shape != clean_acc_t.shape:
++            clean_jerk_t = torch.zeros_like(clean_acc_t)
++        else:
++            clean_jerk_t = clean_acc_t - self._prev_clean_acc
++
++        try:
++            command = self.env.command_manager.get_command("base_velocity").to(self.device)
++            target_speed = command[:, 0].view(num_envs, 1)
++        except Exception:
++            target_speed = torch.zeros(num_envs, 1, device=self.device)
++
++        target_heading = torch.tensor([1.0, 0.0, 0.0], device=self.device).repeat(num_envs, 1)
++        for idx, name in enumerate(self.robots[:num_agents]):
++            robot = self.env.scene[name]
++            speed_x = robot.data.root_lin_vel_b[:, 0].to(self.device)
++            heading_vec = torch.nn.functional.normalize(
++                torch.nan_to_num(robot.data.root_quat_w.to(self.device), nan=0.0), dim=-1
++            )
++            from isaaclab.utils.math import quat_apply
++            world_heading = quat_apply(heading_vec, target_heading)
++            heading_i = torch.relu(-world_heading[:, 0]).pow(2)
++            backward_i = torch.relu(-speed_x).pow(2)
++            forward_deficit_i = torch.relu(target_speed.squeeze(1) - speed_x).pow(2)
++            physical_cost[:, idx] = physical_cost[:, idx] + (
++                self.cfg.lambda_heading * heading_i
++                + self.cfg.lambda_backward * backward_i
++                + self.cfg.lambda_forward_deficit * forward_deficit_i
++            )
++            heading_metric = heading_metric + heading_i
++            backward_metric = backward_metric + backward_i
++            forward_deficit_metric = forward_deficit_metric + forward_deficit_i
++
++        for idx in range(1, min(len(self.robots), num_agents)):
++            pred = self.env.scene[self.robots[idx - 1]]
++            foll = self.env.scene[self.robots[idx]]
++            rel_world = pred.data.root_pos_w.to(self.device) - foll.data.root_pos_w.to(self.device)
++            rel_local = quat_apply_inverse(pred.data.root_quat_w.to(self.device), rel_world)
++            gap = rel_local[:, 0].abs()
++            lateral = rel_local[:, 1]
++            vel_err = pred.data.root_lin_vel_b[:, :2].to(self.device) - foll.data.root_lin_vel_b[:, :2].to(self.device)
++            acc_err = clean_acc_t[:, idx - 1] - clean_acc_t[:, idx]
++            follower_speed = torch.clamp(foll.data.root_lin_vel_b[:, 0].to(self.device), min=0.0)
++            desired_gap = self.cfg.target_gap + self.cfg.headway * follower_speed
++            overspeed = torch.relu(follower_speed - target_speed.squeeze(1))
++            spacing_i = (gap - desired_gap).pow(2)
++            velocity_i = vel_err.pow(2).sum(dim=-1)
++            acceleration_i = acc_err.pow(2)
++            jerk_i = clean_jerk_t[:, idx].pow(2)
++            overspeed_i = overspeed.pow(2)
++            lateral_i = lateral.pow(2)
++            collision_i = (gap < self.cfg.collision_gap).float()
++
++            physical_cost[:, idx] = (
++                self.cfg.lambda_spacing * spacing_i
++                + self.cfg.lambda_velocity * velocity_i
++                + self.cfg.lambda_acceleration * acceleration_i
++                + self.cfg.lambda_jerk * jerk_i
++                + self.cfg.lambda_overspeed * overspeed_i
++                + self.cfg.lambda_lateral * lateral_i
++                + self.cfg.lambda_collision * collision_i
++            )
++            spacing_metric = spacing_metric + spacing_i
++            velocity_metric = velocity_metric + velocity_i
++            acceleration_metric = acceleration_metric + acceleration_i
++            jerk_metric = jerk_metric + jerk_i
++            overspeed_metric = overspeed_metric + overspeed_i
++            lateral_metric = lateral_metric + lateral_i
++            collision_metric = collision_metric + collision_i
++
++        action_energy = actions_3d.pow(2).mean(dim=-1)
++        if self._prev_actions_for_score is None or self._prev_actions_for_score.shape != actions_3d.shape:
++            action_jerk = torch.zeros_like(action_energy)
++        else:
++            action_jerk = (actions_3d - self._prev_actions_for_score).pow(2).mean(dim=-1)
++        physical_cost = (
++            physical_cost
++            + self.cfg.lambda_action_energy * action_energy
++            + self.cfg.lambda_jerk * action_jerk
++        )
++        if num_agents > 1:
++            physical_cost[:, 0] = physical_cost[:, 1:].mean(dim=1)
++        physical_cost = torch.clamp(physical_cost, min=0.0, max=self.cfg.physical_cost_clip)
++
++        self._prev_clean_vel = clean_vel_t.detach().clone()
++        self._prev_clean_acc = clean_acc_t.detach().clone()
++        self._prev_actions_for_score = actions_3d.detach().clone()
++        pair_count = float(max(min(len(self.robots), num_agents) - 1, 1))
++        self._last_physical_context = {
++            "physical_cost": float(physical_cost.mean().item()),
++            "physical_spacing_cost": float((spacing_metric / pair_count).mean().item()),
++            "physical_velocity_cost": float((velocity_metric / pair_count).mean().item()),
++            "physical_acceleration_cost": float((acceleration_metric / pair_count).mean().item()),
++            "physical_jerk_cost": float(((jerk_metric / pair_count) + action_jerk.mean(dim=1)).mean().item()),
++            "physical_overspeed_cost": float((overspeed_metric / pair_count).mean().item()),
++            "physical_lateral_cost": float((lateral_metric / pair_count).mean().item()),
++            "physical_heading_cost": float((heading_metric / float(max(num_agents, 1))).mean().item()),
++            "physical_backward_cost": float((backward_metric / float(max(num_agents, 1))).mean().item()),
++            "physical_forward_deficit_cost": float((forward_deficit_metric / float(max(num_agents, 1))).mean().item()),
++            "physical_collision_cost": float((collision_metric / pair_count).mean().item()),
++        }
++        return (-physical_cost).view(num_envs, num_agents, 1)
++
++    def get_physical_attack_context(self) -> dict[str, float]:
++        return dict(self._last_physical_context)
+ 
+     def shape_reward(self, obs: torch.Tensor, actions: torch.Tensor, rewards: torch.Tensor) -> torch.Tensor:
+-        teacher_obs = obs[:, 0, :] if obs.dim() == 3 else obs
+-        flat_actions = actions.reshape(actions.shape[0], -1)
++        if obs.dim() == 3:
++            num_envs, num_agents, obs_dim = obs.shape
++            act_dim = actions.shape[-1]
++            teacher_obs = obs.reshape(num_envs * num_agents, obs_dim)
++            teacher_actions = actions.reshape(num_envs * num_agents, act_dim)
++        else:
++            num_envs, obs_dim = obs.shape
++            num_agents = 1
++            teacher_obs = obs
++            teacher_actions = actions.reshape(num_envs, -1)
+         with torch.no_grad():
+-            shaping = self.model(teacher_obs.to(self.device), flat_actions.to(self.device)).view(rewards.shape[0], 1, 1)
++            shaping = self.model(teacher_obs.to(self.device), teacher_actions.to(self.device)).view(num_envs, num_agents, 1)
+             if self.cfg.shaping_clip > 0.0:
+                 shaping = torch.clamp(shaping, -self.cfg.shaping_clip, self.cfg.shaping_clip)
+         self.last_shaping_mean = float(shaping.mean().item())
+@@ -77,33 +263,28 @@ class RewardTeacherModule(TeacherModule):
+         if self._cached_actions is not None:
+             self._cached_prev_actions = self._cached_actions.detach().clone()
+         self._cached_obs = teacher_obs.detach().clone()
+-        self._cached_actions = flat_actions.detach().clone()
+-        self._cached_rewards = rewards.detach().clone()
+-        # Build a lightweight physical-score proxy from available training-time signals.
+-        # This is the implementation proxy of A_phy in the paper's
+-        # first-order advantage-correlation estimator. It is intentionally
+-        # computed before applying teacher shaping so it reflects the current
+-        # transition's physical tendency rather than the teacher-modified reward.
+-        forward_component = flat_actions[..., 0].view(rewards.shape[0], 1, 1)
+-        no_backward_penalty = torch.relu(-forward_component)
+-        forward_drive = torch.relu(forward_component)
+-        action_energy_penalty = flat_actions.pow(2).mean(dim=-1, keepdim=True).view(rewards.shape[0], 1, 1)
+-        physical_score = rewards.mean(dim=(1, 2), keepdim=True) + forward_drive - no_backward_penalty - 0.1 * action_energy_penalty
+-        self._cached_physical_score = physical_score.detach().clone()
++        self._cached_actions = teacher_actions.detach().clone()
++        self._cached_rewards = rewards.reshape(num_envs * num_agents, 1, 1).detach().clone()
++        # Clean physical score for the upper-level Teacher. This uses the
++        # uncompromised IsaacLab scene state available during centralized
++        # training, so it is not tied to the corrupted student observation.
++        physical_score = self._compute_clean_physical_score(actions.to(self.device), rewards.to(self.device))
++        physical_score_flat = physical_score.reshape(num_envs * num_agents, 1, 1)
++        self._cached_physical_score = physical_score_flat.detach().clone()
+ 
+         # Accumulate the teacher-update window for Step-3 meta attribution.
+         # The actual correlation is computed in maybe_update() and then the
+         # window is cleared, so each teacher update receives delayed credit
+         # from the shaping behavior applied over the preceding window.
+         self._window_obs.append(teacher_obs.detach().clone())
+-        self._window_actions.append(flat_actions.detach().clone())
+-        self._window_physical_scores.append(physical_score.detach().clone())
++        self._window_actions.append(teacher_actions.detach().clone())
++        self._window_physical_scores.append(physical_score_flat.detach().clone())
+ 
+         if self.cfg.shaping_coef <= 0.0:
+             return rewards
+         delta = self.cfg.shaping_coef * shaping
+         if self.cfg.action_penalty_coef > 0.0:
+-            action_penalty = flat_actions.pow(2).mean(dim=-1).view(rewards.shape[0], 1, 1)
++            action_penalty = actions.pow(2).mean(dim=-1, keepdim=True)
+             delta = delta - self.cfg.action_penalty_coef * action_penalty
+         return rewards + delta
+ 
+@@ -117,35 +298,24 @@ class RewardTeacherModule(TeacherModule):
+         self.model.train()
+         pred = self.model(self._cached_obs.to(self.device), self._cached_actions.to(self.device)).view(-1, 1, 1)
+ 
+-        rewards = self._cached_rewards.to(self.device)
++        physical_score = self._cached_physical_score.to(self.device)
+         if self._reward_ema is None:
+-            self._reward_ema = rewards.mean(dim=0, keepdim=True).detach()
+-        self._reward_ema = self.cfg.reward_ema_tau * self._reward_ema + (1.0 - self.cfg.reward_ema_tau) * rewards.mean(dim=0, keepdim=True).detach()
++            self._reward_ema = physical_score.mean(dim=0, keepdim=True).detach()
++        self._reward_ema = (
++            self.cfg.reward_ema_tau * self._reward_ema
++            + (1.0 - self.cfg.reward_ema_tau) * physical_score.mean(dim=0, keepdim=True).detach()
++        )
+ 
+-        # Stage-2 objective (more policy-aware than plain reward fitting):
+-        # 1) advantage-like target against EMA baseline
+-        # 2) temporal consistency regularization to avoid shaping oscillation
+-        target_adv = rewards - self._reward_ema
++        # Physics-aware objective: the Teacher learns F_phi so that the lower-level
++        # shaped-reward advantage is aligned with the clean physical objective.
++        target_adv = physical_score - self._reward_ema.mean(dim=1, keepdim=True)
+         target_adv = target_adv / target_adv.std(unbiased=False).clamp_min(1.0e-5)
++        target_adv = torch.clamp(target_adv, -self.cfg.target_adv_clip, self.cfg.target_adv_clip)
+         base_loss = torch.nn.functional.mse_loss(pred, target_adv)
+ 
+-        consistency_loss = torch.tensor(0.0, device=self.device)
+-        if self._cached_prev_obs is not None and self._cached_prev_actions is not None:
+-            with torch.no_grad():
+-                prev_pred = self.model(
+-                    self._cached_prev_obs.to(self.device),
+-                    self._cached_prev_actions.to(self.device),
+-                ).view(-1, 1, 1)
+-            consistency_loss = torch.nn.functional.mse_loss(pred, prev_pred)
+-
+-        # Behavior-aligned proxies (scheme A):
+-        # - no_backward_proxy: penalize negative forward command components
+-        # - forward_drive_proxy: penalize insufficient positive forward command
+-        actions = self._cached_actions.to(self.device)
+-        forward_component = actions[..., 0]
+-        no_backward_loss = torch.relu(-forward_component).mean()
+-        forward_drive_loss = torch.relu(self.cfg.forward_drive_target - forward_component).mean()
+-
++        # Paper-aligned teacher update uses the physical regret signal and the
++        # shaped reward correlation. We keep only the minimum training bridge
++        # terms needed for stable optimization.
+         raw_delta_j = float(context.get("teacher_delta_j", 0.0))
+         self._delta_j_ema = 0.97 * self._delta_j_ema + 0.03 * raw_delta_j
+         centered = raw_delta_j - self._delta_j_ema
+@@ -180,14 +350,9 @@ class RewardTeacherModule(TeacherModule):
+         teacher_adv = window_pred - window_pred.mean()
+         advantage_corr = (physical_adv * teacher_adv).mean()
+         outer_loss = -outer_delta_j * advantage_corr
++        outer_loss = torch.clamp(outer_loss, -self.cfg.outer_loss_clip, self.cfg.outer_loss_clip)
+ 
+-        loss = (
+-            base_loss
+-            + self.cfg.consistency_coef * consistency_loss
+-            + self.cfg.no_backward_coef * no_backward_loss
+-            + self.cfg.forward_drive_coef * forward_drive_loss
+-            + (self.cfg.outer_delta_coef * outer_coef_scale) * outer_loss
+-        )
++        loss = base_loss + (self.cfg.outer_delta_coef * outer_coef_scale) * outer_loss
+ 
+         self.optimizer.zero_grad()
+         loss.backward()
+@@ -206,9 +371,6 @@ class RewardTeacherModule(TeacherModule):
+             "teacher_loss": self.last_teacher_loss,
+             "teacher_grad_norm": float(grad_norm),
+             "teacher_base_loss": float(base_loss.item()),
+-            "teacher_consistency_loss": float(consistency_loss.item()),
+-            "teacher_no_backward_loss": float(no_backward_loss.item()),
+-            "teacher_forward_drive_loss": float(forward_drive_loss.item()),
+             "teacher_raw_delta_j": float(raw_delta_j),
+             "teacher_norm_delta_j": float(outer_delta_j.item()),
+             "teacher_outer_coef_scale": float(outer_coef_scale),
+diff --git a/source/my_exts/marl_platoon/smoke_test_harl_adapter.py b/source/my_exts/marl_platoon/smoke_test_harl_adapter.py
+index 03789f0..d58da54 100644
+--- a/source/my_exts/marl_platoon/smoke_test_harl_adapter.py
++++ b/source/my_exts/marl_platoon/smoke_test_harl_adapter.py
+@@ -30,7 +30,7 @@ from isaaclab.app import AppLauncher
+ parser = argparse.ArgumentParser(description="Smoke test HARL adapter for platoon.")
+ parser.add_argument("--task", type=str, default="Isaac-Marl-Platoon-v0")
+ parser.add_argument("--num_envs", type=int, default=1)
+-parser.add_argument("--num_agents", type=int, default=4)
++parser.add_argument("--num_agents", type=int, default=6)
+ parser.add_argument("--obs_dim", type=int, default=18)
+ parser.add_argument("--act_dim", type=int, default=4)
+ AppLauncher.add_app_launcher_args(parser)
+diff --git a/source/my_exts/marl_platoon/tasks/__init__.py b/source/my_exts/marl_platoon/tasks/__init__.py
+index 91c432c..8ea4479 100644
+--- a/source/my_exts/marl_platoon/tasks/__init__.py
++++ b/source/my_exts/marl_platoon/tasks/__init__.py
+@@ -22,48 +22,59 @@ class PlatoonHAPPOEnvCfg(PlatoonEnvCfg):
+ 
+         # Core routing switches
+         self.algorithm.algorithm = "happo"
++        self.algorithm.num_agents = 6
+         self.algorithm.use_happo_layout = True
+         self.algorithm.use_happo_actions = True
+         self.algorithm.freeze_outer_ppo = True
+ 
+         # Module toggles
+         self.algorithm.enable_teacher = True
+-        self.algorithm.enable_attack = True
+-        self.algorithm.enable_shield = True
+-
+-        # Attack baseline profile / CA-GAN skeleton
+-        self.algorithm.attack_level = "hard"  # off|easy|medium|hard
+-        self.algorithm.attack_target_mode = "all"  # all|rel_pos|vel
+-        self.algorithm.attack_seed = 3407
+-        self.algorithm.attack_log_interval_updates = 20
+-        self.algorithm.attack_mode = "cagan"  # profile|generator|cagan
++        self.algorithm.enable_attack = False
++        self.algorithm.enable_shield = True
++
++        # Stabilized default profile. Stronger paper ablations can override
++        # these values explicitly after the Student baseline is numerically stable.
++        self.algorithm.attack_level = "off"  # off|light|easy|medium|hard
++        self.algorithm.attack_target_mode = "all"  # all|rel_pos|vel
++        self.algorithm.attack_seed = 3407
++        self.algorithm.attack_log_interval_updates = 20
++        self.algorithm.attack_mode = "profile"  # profile|generator|cagan
+         self.algorithm.attack_noise_dim = 16
+         self.algorithm.attack_hidden_dim = 128
+         self.algorithm.attack_realism_coef = 0.10
+         self.algorithm.attack_generator_lr = 1.0e-4
+         self.algorithm.attack_discriminator_lr = 1.0e-4
+-        self.algorithm.attack_update_interval = 4
++        self.algorithm.attack_update_interval = 32
++        self.algorithm.attack_curriculum_warmup_updates = 2000
++        self.algorithm.attack_curriculum_start_mode = "profile"
++        self.algorithm.attack_decay_start_updates = 5000
++        self.algorithm.attack_min_obj_scale = 0.25
++        self.algorithm.attack_min_update_freq_scale = 0.25
++        self.algorithm.attack_decay_half_life_updates = 2500
+         self.algorithm.attack_obj_coef = 1.2
+         self.algorithm.attack_reward_proxy_coef = 1.0
+         self.algorithm.attack_dos_proxy_coef = 0.3
+ 
+         # HAPPO baseline knobs
+-        self.algorithm.happo_actor_lr = 5.0e-5
+-        self.algorithm.happo_critic_lr = 5.0e-5
+-        self.algorithm.happo_clip_param = 0.1
+-        self.algorithm.happo_ppo_epoch = 3
+-        self.algorithm.happo_max_grad_norm = 0.3
+-        self.algorithm.happo_action_clip = 0.3
+-        self.algorithm.happo_action_warmup_updates = 30
+-        self.algorithm.happo_log_interval = 256
+-        self.algorithm.happo_log_level = "basic"
++        self.algorithm.happo_actor_lr = 1.0e-5
++        self.algorithm.happo_critic_lr = 1.0e-5
++        self.algorithm.happo_clip_param = 0.05
++        self.algorithm.happo_ppo_epoch = 1
++        self.algorithm.happo_num_mini_batches = 16
++        self.algorithm.happo_factor_chunk_size = 4096
++        self.algorithm.happo_max_grad_norm = 0.05
++        self.algorithm.happo_action_clip = 0.4
++        self.algorithm.happo_action_warmup_updates = 0
++        self.algorithm.happo_urdf_wheel_sign_adapter = True
++        self.algorithm.happo_log_interval = 256
++        self.algorithm.happo_log_level = "basic"
+ 
+         # Teacher baseline knobs
+-        self.algorithm.teacher_shaping_coef = 0.002
++        self.algorithm.teacher_shaping_coef = 0.001
+         self.algorithm.teacher_lr = 1.0e-4
+         self.algorithm.teacher_update_interval = 5
+         self.algorithm.teacher_shaping_clip = 0.03
+-        self.algorithm.teacher_action_penalty_coef = 0.01
++        self.algorithm.teacher_action_penalty_coef = 0.0
+ 
+ # Stable PPO baseline entry.
+ gym.register(
+diff --git a/source/my_exts/marl_platoon/tasks/platoon/agents.py b/source/my_exts/marl_platoon/tasks/platoon/agents.py
+index dc680fe..4f9b82d 100644
+--- a/source/my_exts/marl_platoon/tasks/platoon/agents.py
++++ b/source/my_exts/marl_platoon/tasks/platoon/agents.py
+@@ -1,121 +1,133 @@
+-from isaaclab.utils import configclass
+-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
+-
+-
+-@configclass
+-class PlatoonAlgorithmCfg:
+-    """Task-local algorithm switch used by the official IsaacLab entrypoint.
+-
+-    Launch path stays unchanged (`rsl_rl/train.py`). These flags only control
+-    task-internal behavior:
+-
+-    - algorithm:
+-      - "ppo": keep current stable PPO path.
+-      - "happo": enable task-internal HAPPO routing.
+-    - use_happo_layout:
+-      Use multi-agent layout conversion for HAPPO internals.
+-    - use_happo_actions:
+-      If True, wrapper overrides external PPO actions with internal HAPPO
+-      actions before `env.step()`.
+-    - enable_teacher / enable_attack / enable_shield:
+-      Reserved feature toggles (kept off in the current HAPPO baseline).
+-    - happo_log_interval:
+-      Rollout log interval in environment steps.
+-    - happo_log_level:
+-      Logging verbosity for task-internal HAPPO logs: "off" | "basic" | "debug".
+-    """
+-
+-    algorithm: str = "ppo"
+-    enable_teacher: bool = False
+-    enable_attack: bool = False
+-    enable_shield: bool = False
+-    use_happo_layout: bool = False
+-    use_happo_actions: bool = False
+-    happo_log_interval: int = 32
+-    happo_log_level: str = "basic"
+-    freeze_outer_ppo: bool = False
+-
+-    # HAPPO stability knobs (task-internal)
+-    happo_actor_lr: float = 5.0e-5
+-    happo_critic_lr: float = 5.0e-5
+-    happo_clip_param: float = 0.1
+-    happo_ppo_epoch: int = 3
+-    happo_max_grad_norm: float = 0.3
+-    happo_action_clip: float = 0.3
+-    happo_action_warmup_updates: int = 30
+-    happo_bad_heading_action_scale: float = 0.2
+-    teacher_shaping_coef: float = 0.002
+-    teacher_lr: float = 1.0e-4
+-    teacher_update_interval: int = 5
+-    teacher_shaping_clip: float = 0.03
+-    teacher_action_penalty_coef: float = 0.01
+-
+-    # Attack profile (task-internal attacker preset): off|easy|medium|hard
+-    attack_level: str = "medium"
+-    attack_target_mode: str = "all"  # all|rel_pos|vel
+-    attack_seed: int = 3407
+-    attack_log_interval_updates: int = 20
+-    attack_mode: str = "profile"  # profile|generator|cagan
+-    attack_noise_dim: int = 16
+-    attack_hidden_dim: int = 128
+-    attack_realism_coef: float = 0.10
+-    attack_generator_lr: float = 1.0e-4
+-    attack_discriminator_lr: float = 1.0e-4
+-    attack_update_interval: int = 4
+-    attack_obj_coef: float = 1.2
+-    attack_reward_proxy_coef: float = 1.0
+-    attack_dos_proxy_coef: float = 0.3
+-
+-
+-@configclass
+-class PlatoonPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+-    empirical_normalization = True
+-
+-    num_steps_per_env = 32
+-    max_iterations = 2000
+-    save_interval = 50
+-    experiment_name = "platoon_test"
+-
+-    policy = RslRlPpoActorCriticCfg(
+-        init_noise_std=1.0,
+-        actor_hidden_dims=[512, 256, 128],
+-        critic_hidden_dims=[512, 256, 128],
+-        activation="elu",
+-    )
+-
+-    algorithm = RslRlPpoAlgorithmCfg(
+-        value_loss_coef=2.0,
+-        use_clipped_value_loss=True,
+-        clip_param=0.2,
+-        entropy_coef=0.01,
+-        num_learning_epochs=5,
+-        num_mini_batches=4,
+-        learning_rate=3.0e-4,
+-        schedule="adaptive",
+-        gamma=0.99,
+-        lam=0.95,
+-        desired_kl=0.01,
+-        max_grad_norm=1.0,
+-    )
+-
+-    platoon = PlatoonAlgorithmCfg()
+-
+-
+-@configclass
+-class PlatoonHAPPORunnerCfg(PlatoonPPORunnerCfg):
+-    """Task-side HAPPO hook.
+-
+-    This keeps the launch surface identical while reserving a dedicated config
+-    branch for the eventual HARL-backed student logic.
+-    """
+-
+-    experiment_name = "platoon_happo"
+-    platoon = PlatoonAlgorithmCfg(
+-        algorithm="happo",
+-        enable_teacher=False,
+-        enable_attack=False,
+-        enable_shield=False,
+-        use_happo_layout=True,
+-        use_happo_actions=True,
+-        freeze_outer_ppo=True,
+-    )
++from isaaclab.utils import configclass
++from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
++
++
++@configclass
++class PlatoonAlgorithmCfg:
++    """Task-local algorithm switch used by the official IsaacLab entrypoint.
++
++    Launch path stays unchanged (`rsl_rl/train.py`). These flags only control
++    task-internal behavior:
++
++    - algorithm:
++      - "ppo": keep current stable PPO path.
++      - "happo": enable task-internal HAPPO routing.
++    - use_happo_layout:
++      Use multi-agent layout conversion for HAPPO internals.
++    - use_happo_actions:
++      If True, wrapper overrides external PPO actions with internal HAPPO
++      actions before `env.step()`.
++    - enable_teacher / enable_attack / enable_shield:
++      Enable the task-local MGRS Teacher, CA-GAN attacker, and safety shield.
++    - happo_log_interval:
++      Rollout log interval in environment steps.
++    - happo_log_level:
++      Logging verbosity for task-internal HAPPO logs: "off" | "basic" | "debug".
++    """
++
++    algorithm: str = "ppo"
++    num_agents: int = 6
++    enable_teacher: bool = False
++    enable_attack: bool = False
++    enable_shield: bool = False
++    use_happo_layout: bool = False
++    use_happo_actions: bool = False
++    happo_log_interval: int = 32
++    happo_log_level: str = "basic"
++    freeze_outer_ppo: bool = False
++
++    # HAPPO stability knobs (task-internal)
++    happo_actor_lr: float = 1.0e-5
++    happo_critic_lr: float = 1.0e-5
++    happo_clip_param: float = 0.05
++    happo_ppo_epoch: int = 1
++    happo_num_mini_batches: int = 16
++    happo_factor_chunk_size: int = 4096
++    happo_max_grad_norm: float = 0.05
++    happo_action_clip: float = 0.4
++    happo_action_warmup_updates: int = 0
++    happo_bad_heading_action_scale: float = 0.2
++    teacher_shaping_coef: float = 0.001
++    teacher_lr: float = 1.0e-4
++    teacher_update_interval: int = 5
++    teacher_shaping_clip: float = 0.03
++    teacher_action_penalty_coef: float = 0.0
++
++    # Attack profile (task-internal attacker preset): off|light|easy|medium|hard
++    attack_level: str = "off"
++    attack_target_mode: str = "all"  # all|rel_pos|vel
++    attack_seed: int = 3407
++    attack_log_interval_updates: int = 20
++    attack_mode: str = "profile"  # profile|generator|cagan
++    attack_noise_dim: int = 16
++    attack_hidden_dim: int = 128
++    attack_realism_coef: float = 0.10
++    attack_generator_lr: float = 1.0e-4
++    attack_discriminator_lr: float = 1.0e-4
++    attack_update_interval: int = 32
++    attack_curriculum_warmup_updates: int = 2000
++    attack_curriculum_start_mode: str = "profile"
++    attack_decay_start_updates: int = 5000
++    attack_min_obj_scale: float = 0.25
++    attack_min_update_freq_scale: float = 0.25
++    attack_decay_half_life_updates: int = 2500
++    attack_obj_coef: float = 1.2
++    attack_reward_proxy_coef: float = 1.0  # fallback score coefficient when physical context is unavailable
++    attack_dos_proxy_coef: float = 0.3
++    max_fdi_pos: float = -1.0
++    max_fdi_acc: float = -1.0
++    max_dos_rate: float = -1.0
++
++
++@configclass
++class PlatoonPPORunnerCfg(RslRlOnPolicyRunnerCfg):
++    empirical_normalization = True
++
++    num_steps_per_env = 32
++    max_iterations = 2000
++    save_interval = 50
++    experiment_name = "platoon_test"
++
++    policy = RslRlPpoActorCriticCfg(
++        init_noise_std=1.0,
++        actor_hidden_dims=[512, 256, 128],
++        critic_hidden_dims=[512, 256, 128],
++        activation="elu",
++    )
++
++    algorithm = RslRlPpoAlgorithmCfg(
++        value_loss_coef=2.0,
++        use_clipped_value_loss=True,
++        clip_param=0.2,
++        entropy_coef=0.01,
++        num_learning_epochs=5,
++        num_mini_batches=4,
++        learning_rate=3.0e-4,
++        schedule="adaptive",
++        gamma=0.99,
++        lam=0.95,
++        desired_kl=0.01,
++        max_grad_norm=1.0,
++    )
++
++    platoon = PlatoonAlgorithmCfg()
++
++
++@configclass
++class PlatoonHAPPORunnerCfg(PlatoonPPORunnerCfg):
++    """Task-side HAPPO hook.
++
++    This keeps the launch surface identical while reserving a dedicated config
++    branch for the eventual HARL-backed student logic.
++    """
++
++    experiment_name = "platoon_happo"
++    platoon = PlatoonAlgorithmCfg(
++        algorithm="happo",
++        enable_teacher=False,
++        enable_attack=False,
++        enable_shield=False,
++        use_happo_layout=True,
++        use_happo_actions=True,
++        freeze_outer_ppo=True,
++    )
+diff --git a/source/my_exts/marl_platoon/tasks/platoon/attacks.py b/source/my_exts/marl_platoon/tasks/platoon/attacks.py
+index 5bfb2eb..48abf80 100644
+--- a/source/my_exts/marl_platoon/tasks/platoon/attacks.py
++++ b/source/my_exts/marl_platoon/tasks/platoon/attacks.py
+@@ -2,13 +2,13 @@ import torch
+ 
+ 
+ def sample_hybrid_attack(num_envs: int, device: torch.device, max_fdi_pos: float, max_fdi_acc: float, max_dos_rate: float):
+-    """简化版 hybrid DoS+FDI 采样器。
++    """Legacy non-HAPPO hybrid DoS+FDI sampler.
+ 
+     返回：
+       beta_a, beta_p: {0,1} 掉包开关
+       f_a, f_p:       注入扰动
+ 
+-    备注：先提供“可运行攻击接口”，后续可替换为 CA-GAN 生成器输出。
++    HAPPO/MGRS 任务使用 task-local CA-GAN attacker；该函数仅服务旧 wrapper 日志路径。
+     """
+     # DoS: 1=正常, 0=丢包
+     keep_prob = 1.0 - max_dos_rate
+diff --git a/source/my_exts/marl_platoon/tasks/platoon/config.py b/source/my_exts/marl_platoon/tasks/platoon/config.py
+index c780c57..e512a81 100644
+--- a/source/my_exts/marl_platoon/tasks/platoon/config.py
++++ b/source/my_exts/marl_platoon/tasks/platoon/config.py
+@@ -1,12 +1,12 @@
+ import torch
+-from isaaclab.envs import ManagerBasedRLEnvCfg
++from isaaclab.envs import ManagerBasedRLEnvCfg, ViewerCfg
+ from isaaclab.scene import InteractiveSceneCfg
+ from isaaclab.utils import configclass
+ from isaaclab.managers import SceneEntityCfg, RewardTermCfg, ObservationTermCfg, TerminationTermCfg, \
+     ObservationGroupCfg, EventTermCfg
+ import isaaclab.envs.mdp as mdp
+ # 引入长方体、材质、刚体属性配置
+-from isaaclab.sim import DomeLightCfg, UrdfFileCfg, SimulationCfg, PhysxCfg, \
++from isaaclab.sim import DomeLightCfg, UrdfFileCfg, UsdFileCfg, SimulationCfg, PhysxCfg, \
+     CuboidCfg, PreviewSurfaceCfg, RigidBodyMaterialCfg, RigidBodyPropertiesCfg
+ from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+ from isaaclab.actuators import ImplicitActuatorCfg
+@@ -17,9 +17,13 @@ from isaaclab.utils.math import quat_apply_inverse, quat_apply
+ # =============================================================================
+ # 0. 资产定义
+ # =============================================================================
+-USER_URDF_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/Melodic_wheeltec_robot_src_250707/src/turn_on_wheeltec_robot/urdf/mini_4wd_robot.urdf"
+-
+-MY_CAR_CFG = ArticulationCfg(
++USER_URDF_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/Melodic_wheeltec_robot_src_250707/src/turn_on_wheeltec_robot/urdf/senior_4wd_bs_robot.urdf"
++HIGHWAY_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/highway_straight/highway_straight.usda"
++TARGET_SPEED_RANGE = (0.6, 0.8)
++WHEEL_ACTION_SCALE = 12.0
++WHEEL_VELOCITY_LIMIT = 20.0
++
++MY_CAR_CFG = ArticulationCfg(
+     spawn=UrdfFileCfg(
+         asset_path=USER_URDF_PATH,
+         fix_base=False,
+@@ -32,12 +36,23 @@ MY_CAR_CFG = ArticulationCfg(
+     ),
+     init_state=ArticulationCfg.InitialStateCfg(pos=(0.0, 0.0, 0.5)),
+     actuators={
+-        "all_wheels": ImplicitActuatorCfg(
+-            joint_names_expr=[".*_wheel_joint"],
+-            stiffness=0.0, damping=2.0, effort_limit_sim=100.0, velocity_limit_sim=10.0,
+-        ),
+-    }
+-)
++        "all_wheels": ImplicitActuatorCfg(
++            joint_names_expr=[".*_wheel_joint"],
++            stiffness=0.0, damping=2.0, effort_limit_sim=120.0, velocity_limit_sim=WHEEL_VELOCITY_LIMIT,
++        ),
++    }
++)
++
++PLATOON_ROBOTS = ["robot", "robot_2", "robot_3", "robot_4", "robot_5", "robot_6"]
++CTH_STANDSTILL_DISTANCE = 1.5
++CTH_HEADWAY = 0.6
++LATERAL_DEADZONE = 0.05
++LATERAL_CRITICAL_OFFSET = 0.25
++
++
++def _cth_desired_gap(env, follower_name: str):
++    follower_speed = torch.clamp(env.scene[follower_name].data.root_lin_vel_b[:, 0], min=0.0)
++    return CTH_STANDSTILL_DISTANCE + CTH_HEADWAY * follower_speed
+ 
+ 
+ # =============================================================================
+@@ -50,15 +65,15 @@ def reward_true_formation_success(env):
+     只有当所有跟随车与前车的距离误差都 < 10cm 时，才算成功。
+     用于评估智能体是否真正学会了完美编队。
+     """
+-    robots = ["robot", "robot_2", "robot_3", "robot_4"]
+-    target_dist = 0.6
++    robots = PLATOON_ROBOTS
+     tolerance = 0.2  # 苛刻的成功标准：10cm 误差
+ 
+     all_success_mask = torch.ones(env.num_envs, device=env.device)
+ 
+-    for i in range(1, 4):
++    for i in range(1, len(robots)):
+         dist = torch.norm(env.scene[robots[i - 1]].data.root_pos_w[:, :2] -
+                           env.scene[robots[i]].data.root_pos_w[:, :2], dim=1)
++        target_dist = _cth_desired_gap(env, robots[i])
+         # 只要有一对车距离不达标，这一帧就算失败 (0分)
+         is_good = (torch.abs(dist - target_dist) < tolerance).float()
+         all_success_mask *= is_good
+@@ -71,11 +86,11 @@ def reward_true_collision_fail(env):
+     [论文 \bar{R}] 绝对失败指标 (Sparse Reward)
+     只要发生任何碰撞 (距离 < 30cm)，就算严重事故。
+     """
+-    robots = ["robot", "robot_2", "robot_3", "robot_4"]
++    robots = PLATOON_ROBOTS
+     min_safe_dist = 0.30
+     any_crash_mask = torch.zeros(env.num_envs, device=env.device)
+ 
+-    for i in range(1, 4):
++    for i in range(1, len(robots)):
+         dist = torch.norm(env.scene[robots[i - 1]].data.root_pos_w[:, :2] -
+                           env.scene[robots[i]].data.root_pos_w[:, :2], dim=1)
+         is_crash = (dist < min_safe_dist).float()
+@@ -89,21 +104,37 @@ def reward_true_collision_fail(env):
+ # 2. 训练用逻辑函数 (Inner Loop Objectives)
+ # =============================================================================
+ 
+-def reward_leader_velocity_matching(env):
+-    """领航车速度跟随"""
+-    command_vel = env.command_manager.get_command("base_velocity")
+-    actual_vel = env.scene["robot"].data.root_lin_vel_b[:, :2]
+-    error = torch.norm(command_vel[:, :2] - actual_vel, dim=1)
+-    reward = torch.exp(-torch.square(error) / 0.2)
+-
+-    if not hasattr(env, "_debug_leader_vel_once"):
+-        env._debug_leader_vel_once = True
+-        print("[DEBUG][leader_motion] command_vel[0]=", command_vel[0].detach().cpu().tolist())
+-        print("[DEBUG][leader_motion] actual_vel[0]=", actual_vel[0].detach().cpu().tolist())
+-        print("[DEBUG][leader_motion] error_mean=", float(error.mean().item()))
+-        print("[DEBUG][leader_motion] reward_mean=", float(reward.mean().item()))
+-
+-    return reward
++def reward_leader_velocity_matching(env):
++    """领航车速度跟随"""
++    command_vel = env.command_manager.get_command("base_velocity")
++    actual_vel = env.scene["robot"].data.root_lin_vel_b[:, :2]
++    error = torch.norm(command_vel[:, :2] - actual_vel, dim=1)
++    reward = torch.exp(-torch.square(error) / 0.2)
++
++    debug_step = int(getattr(env, "common_step_counter", 0))
++    if debug_step >= 20 and debug_step % 60 == 20:
++        printed_steps = getattr(env, "_debug_leader_vel_steps", set())
++        if debug_step in printed_steps:
++            return reward
++        printed_steps.add(debug_step)
++        env._debug_leader_vel_steps = printed_steps
++        action_terms = getattr(getattr(env, "action_manager", None), "_terms", {})
++        leader_action = action_terms.get("joint_vel_1") if isinstance(action_terms, dict) else None
++        raw_action = getattr(leader_action, "raw_actions", None)
++        processed_action = getattr(leader_action, "processed_actions", None)
++        joint_vel = env.scene["robot"].data.joint_vel
++        print("[DEBUG][leader_motion] step=", debug_step)
++        print("[DEBUG][leader_motion] command_vel[0]=", command_vel[0].detach().cpu().tolist())
++        print("[DEBUG][leader_motion] actual_vel[0]=", actual_vel[0].detach().cpu().tolist())
++        if raw_action is not None:
++            print("[DEBUG][leader_motion] raw_action[0]=", raw_action[0].detach().cpu().tolist())
++        if processed_action is not None:
++            print("[DEBUG][leader_motion] processed_action[0]=", processed_action[0].detach().cpu().tolist())
++        print("[DEBUG][leader_motion] wheel_joint_vel[0]=", joint_vel[0].detach().cpu().tolist())
++        print("[DEBUG][leader_motion] error_mean=", float(error.mean().item()))
++        print("[DEBUG][leader_motion] reward_mean=", float(reward.mean().item()))
++
++    return reward
+ 
+ 
+ # =============================================================================
+@@ -115,9 +146,10 @@ def reward_platoon_dist_chain_dynamic(env):
+     [修复版] 动态队形奖励：强制直线编队
+     修复逻辑：不仅计算距离，还分别计算 X轴(纵向) 和 Y轴(横向) 的误差。
+     """
+-    robots = ["robot", "robot_2", "robot_3", "robot_4"]
++    robots = PLATOON_ROBOTS
+     total_score = 0
+-    target_dist_x = 0.6  # 期望纵向距离 0.6m
++    # CTH spacing: d_des = d0 + h * v_i.  Here d0 is scaled to the
++    # small-car/URDF experiment distance while preserving the CTH structure.
+ 
+     # 1. 动态 Sigma (保持之前的逻辑，用于从宽容变严厉)
+     current_step = env.common_step_counter
+@@ -127,7 +159,7 @@ def reward_platoon_dist_chain_dynamic(env):
+     progress = min(current_step / 50_000_000.0, 1.0)
+     current_sigma = 2.0 + (0.2 - 2.0) * progress
+ 
+-    for i in range(1, 4):
++    for i in range(1, len(robots)):
+         # 获取两车在世界坐标系下的位置
+         pos_leader = env.scene[robots[i - 1]].data.root_pos_w[:, :2]
+         pos_follower = env.scene[robots[i]].data.root_pos_w[:, :2]
+@@ -147,9 +179,8 @@ def reward_platoon_dist_chain_dynamic(env):
+         rel_y = rel_pos[:, 1]
+ 
+         # --- 计算误差 ---
+-        # 1. 纵向误差：我们希望后车在前车后面 0.6m
+-        # 所以 rel_x 应该是 -0.6
+-        error_longitudinal = rel_x - (-target_dist_x)
++        desired_gap = _cth_desired_gap(env, robots[i])
++        error_longitudinal = rel_x - (-desired_gap)
+ 
+         # 2. 横向误差：我们希望后车在正后方，不能偏左偏右
+         # 所以 rel_y 应该是 0.0
+@@ -163,39 +194,76 @@ def reward_platoon_dist_chain_dynamic(env):
+         # 两个维度都好，才给高分
+         total_score += score_long * score_lat
+ 
+-    return total_score / 3.0
+-
+-
+-def reward_lateral_penalty_hard(env):
+-    """
+-    [强力补丁] 专门惩罚横向偏差
+-    只要不在一条直线上，直接扣分！
+-    """
+-    robots = ["robot", "robot_2", "robot_3", "robot_4"]
+-    total_penalty = 0
+-
+-    for i in range(1, 4):
+-        pos_leader = env.scene[robots[i - 1]].data.root_pos_w[:, :2]
+-        pos_follower = env.scene[robots[i]].data.root_pos_w[:, :2]
+-        quat_leader = env.scene[robots[i - 1]].data.root_quat_w
+-
+-        # 计算相对位置
+-        diff_vec = pos_follower - pos_leader
+-        rel_pos = quat_apply_inverse(quat_leader, torch.cat([diff_vec, torch.zeros_like(diff_vec[:, 0:1])], dim=1))
+-
+-        rel_y = rel_pos[:, 1]  # 横向偏差
+-
+-        # 惩罚绝对值：偏离 10cm 就扣 0.1 * weight
+-        total_penalty += torch.abs(rel_y)
+-
+-    return total_penalty  # 返回的是正数，我们在 config 里给它负权重
++    return total_score / float(len(robots) - 1)
++
++
++def reward_lateral_penalty_hard(env):
++    """
++    Penalize follower lateral offset from its predecessor's centerline.
++
++    The penalty is intentionally asymmetric in severity: tiny offsets inside a
++    5 cm dead-zone are ignored, but visible lane drift grows faster after
++    25 cm.  This keeps speed tracking from fighting centimeter-level noise while
++    making the "vehicle runs to the side" failure expensive.
++    """
++    robots = PLATOON_ROBOTS
++    total_penalty = torch.zeros(env.num_envs, device=env.device)
++
++    for i in range(1, len(robots)):
++        pos_leader = env.scene[robots[i - 1]].data.root_pos_w[:, :2]
++        pos_follower = env.scene[robots[i]].data.root_pos_w[:, :2]
++        quat_leader = env.scene[robots[i - 1]].data.root_quat_w
++
++        diff_vec = pos_follower - pos_leader
++        rel_pos = quat_apply_inverse(quat_leader, torch.cat([diff_vec, torch.zeros_like(diff_vec[:, 0:1])], dim=1))
++
++        abs_lat = torch.abs(rel_pos[:, 1])
++        soft_error = torch.relu(abs_lat - LATERAL_DEADZONE)
++        hard_error = torch.relu(abs_lat - LATERAL_CRITICAL_OFFSET)
++        total_penalty += soft_error + 4.0 * torch.square(hard_error)
++
++    return total_penalty
++
++
++def reward_lateral_velocity_penalty(env):
++    """Penalize side-slip and lateral velocity mismatch in the platoon."""
++    robots = PLATOON_ROBOTS
++    total_penalty = torch.zeros(env.num_envs, device=env.device)
++    for i in range(1, len(robots)):
++        pred = env.scene[robots[i - 1]]
++        foll = env.scene[robots[i]]
++        pred_vy = pred.data.root_lin_vel_b[:, 1]
++        foll_vy = foll.data.root_lin_vel_b[:, 1]
++        own_side_slip = torch.abs(foll_vy)
++        rel_side_slip = torch.abs(foll_vy - pred_vy)
++        total_penalty += own_side_slip + 0.5 * rel_side_slip
++    return total_penalty / float(len(robots) - 1)
++
++
++def reward_heading_alignment_penalty(env):
++    """Penalize yaw/heading disagreement that lets followers peel sideways."""
++    robots = PLATOON_ROBOTS
++    target_dir = torch.tensor([1.0, 0.0, 0.0], device=env.device).repeat(env.num_envs, 1)
++    headings = []
++    for name in robots:
++        heading = quat_apply(env.scene[name].data.root_quat_w, target_dir)
++        headings.append(torch.nn.functional.normalize(heading[:, :2], dim=-1))
++
++    total_penalty = torch.zeros(env.num_envs, device=env.device)
++    for i in range(len(headings)):
++        world_alignment = torch.clamp(headings[i][:, 0], -1.0, 1.0)
++        total_penalty += 1.0 - world_alignment
++        if i > 0:
++            pair_alignment = torch.clamp(torch.sum(headings[i - 1] * headings[i], dim=-1), -1.0, 1.0)
++            total_penalty += 0.5 * (1.0 - pair_alignment)
++    return total_penalty / float(len(robots))
+ 
+ def reward_collision_risk(env):
+     """[Dense Reward] 碰撞风险梯度惩罚"""
+-    robots = ["robot", "robot_2", "robot_3", "robot_4"]
++    robots = PLATOON_ROBOTS
+     penalty = 0
+     min_safe_dist = 0.35
+-    for i in range(1, 4):
++    for i in range(1, len(robots)):
+         dist = torch.norm(env.scene[robots[i - 1]].data.root_pos_w[:, :2] -
+                           env.scene[robots[i]].data.root_pos_w[:, :2], dim=1)
+         is_too_close = (dist < min_safe_dist).float()
+@@ -206,7 +274,7 @@ def reward_collision_risk(env):
+ def reward_move_backward_penalty(env):
+     """禁止倒车"""
+     penalty = 0
+-    robots = ["robot", "robot_2", "robot_3", "robot_4"]
++    robots = PLATOON_ROBOTS
+     for name in robots:
+         vel_x = env.scene[name].data.root_lin_vel_b[:, 0]
+         is_backing = (vel_x < -0.05).float()
+@@ -215,18 +283,53 @@ def reward_move_backward_penalty(env):
+ 
+ 
+ def reward_forward_drive_chain(env):
+-    """鼓励向前"""
+-    total = 0
+-    robots = ["robot", "robot_2", "robot_3", "robot_4"]
++    """Reward normalized forward speed for the full platoon."""
++    command_vel = env.command_manager.get_command("base_velocity")
++    target_speed = torch.clamp(command_vel[:, 0].abs(), min=0.1)
++    total = torch.zeros(env.num_envs, device=env.device)
++    robots = PLATOON_ROBOTS
+     for name in robots:
+         vel_x = env.scene[name].data.root_lin_vel_b[:, 0]
+-        total += vel_x
+-    return total
++        total += torch.clamp(vel_x, min=0.0) / target_speed
++    return total / float(len(robots))
++
++
++def reward_leader_progress(env):
++    """Reward actual leader x displacement, normalized by commanded progress."""
++    leader_x = env.scene["robot"].data.root_pos_w[:, 0]
++    if not hasattr(env, "_platoon_prev_leader_x"):
++        env._platoon_prev_leader_x = leader_x.detach().clone()
++        return torch.zeros(env.num_envs, device=env.device)
++
++    prev_x = env._platoon_prev_leader_x.to(device=env.device)
++    delta_x = leader_x - prev_x
++    env._platoon_prev_leader_x = leader_x.detach().clone()
++
++    step_dt = float(getattr(env, "step_dt", 0.02))
++    command_vel = env.command_manager.get_command("base_velocity")
++    expected_delta = torch.clamp(command_vel[:, 0].abs() * step_dt, min=1.0e-4)
++    progress = torch.clamp(delta_x, min=0.0) / expected_delta
++
++    just_reset = env.episode_length_buf <= 1
++    large_jump = torch.abs(delta_x) > 2.0
++    return torch.where(just_reset | large_jump, torch.zeros_like(progress), torch.clamp(progress, max=1.5))
++
++
++def reward_stall_penalty(env):
++    """Penalize standing still when the command asks the platoon to move forward."""
++    command_vel = env.command_manager.get_command("base_velocity")
++    target_speed = torch.clamp(command_vel[:, 0], min=0.0)
++    min_speed = torch.clamp(0.35 * target_speed, min=0.12)
++    penalty = torch.zeros(env.num_envs, device=env.device)
++    for name in PLATOON_ROBOTS:
++        vel_x = env.scene[name].data.root_lin_vel_b[:, 0]
++        penalty += ((target_speed > 0.1) & (vel_x < min_speed)).float()
++    return penalty / float(len(PLATOON_ROBOTS))
+ 
+ 
+ def termination_bad_heading_chain(env):
+     """检查掉头 (>90度)"""
+-    robots = ["robot", "robot_2", "robot_3", "robot_4"]
++    robots = PLATOON_ROBOTS
+     any_bad = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+     target_dir = torch.tensor([1.0, 0.0, 0.0], device=env.device).repeat(env.num_envs, 1)
+     for name in robots:
+@@ -239,18 +342,27 @@ def termination_bad_heading_chain(env):
+ 
+ 
+ def obs_platoon_chain(env):
+-    """观测函数"""
+-    robots = ["robot", "robot_2", "robot_3", "robot_4"]
++    """Per-agent local observation flattened for IsaacLab.
++
++    Layout per agent:
++    [rel_x, rel_y, rel_vx, rel_vy, own_vx, own_vy, own_yaw_rate, role_id].
++    The leader receives zeros for predecessor-relative terms.
++    """
++    robots = PLATOON_ROBOTS
+     obs_list = []
+-    for i in range(1, 4):
+-        pos_l = env.scene[robots[i - 1]].data.root_pos_w
+-        pos_f = env.scene[robots[i]].data.root_pos_w
+-        quat_f = env.scene[robots[i]].data.root_quat_w
+-        rel_pos_local = quat_apply_inverse(quat_f, pos_l - pos_f)
+-        vel_l = env.scene[robots[i - 1]].data.root_lin_vel_b[:, :2]
+-        vel_f = env.scene[robots[i]].data.root_lin_vel_b[:, :2]
+-        rel_vel = vel_l - vel_f
+-        obs_list.append(torch.cat([rel_pos_local[:, :2], rel_vel], dim=-1))
++    for i, name in enumerate(robots):
++        car = env.scene[name]
++        own_vel = car.data.root_lin_vel_b[:, :2]
++        own_yaw_rate = car.data.root_ang_vel_b[:, 2:3]
++        role_id = torch.full((env.num_envs, 1), float(i) / float(max(len(robots) - 1, 1)), device=env.device)
++        if i == 0:
++            rel_terms = torch.zeros(env.num_envs, 4, device=env.device)
++        else:
++            pred = env.scene[robots[i - 1]]
++            rel_pos_local = quat_apply_inverse(car.data.root_quat_w, pred.data.root_pos_w - car.data.root_pos_w)
++            rel_vel = pred.data.root_lin_vel_b[:, :2] - car.data.root_lin_vel_b[:, :2]
++            rel_terms = torch.cat([rel_pos_local[:, :2], rel_vel], dim=-1)
++        obs_list.append(torch.cat([rel_terms, own_vel, own_yaw_rate, role_id], dim=-1))
+     return torch.cat(obs_list, dim=-1)
+ 
+ 
+@@ -263,30 +375,33 @@ class PlatoonObservationsCfg:
+     @configclass
+     class PolicyGroupCfg(ObservationGroupCfg):
+         rel_pos_chain = ObservationTermCfg(func=obs_platoon_chain)
+-        last_vel = ObservationTermCfg(func=mdp.base_lin_vel, params={"asset_cfg": SceneEntityCfg("robot_4")})
+-        last_ang_vel = ObservationTermCfg(func=mdp.base_ang_vel, params={"asset_cfg": SceneEntityCfg("robot_4")})
+ 
+     policy: PolicyGroupCfg = PolicyGroupCfg()
+ 
+ 
+ @configclass
+-class PlatoonRewardsCfg:
++class PlatoonRewardsCfg:
+     # --- Inner Loop: 训练引导信号 (Dense) ---
+-    leader_motion = RewardTermCfg(func=reward_leader_velocity_matching, weight=2.0)
+-    formation = RewardTermCfg(func=reward_platoon_dist_chain_dynamic, weight=4.0)
+-    collision_risk = RewardTermCfg(func=reward_collision_risk, weight=-10.0)
+-    no_backward = RewardTermCfg(func=reward_move_backward_penalty, weight=-5.0)
+-    forward_drive = RewardTermCfg(func=reward_forward_drive_chain, weight=0.5)
+-    action_rate = RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1)
+-    lateral_correct = RewardTermCfg(func=reward_lateral_penalty_hard, weight=-2.0)
++    # Progress-aware reward: make actual forward movement dominate survival.
++    leader_motion = RewardTermCfg(func=reward_leader_velocity_matching, weight=5.0)
++    leader_progress = RewardTermCfg(func=reward_leader_progress, weight=6.0)
++    formation = RewardTermCfg(func=reward_platoon_dist_chain_dynamic, weight=2.0)
++    collision_risk = RewardTermCfg(func=reward_collision_risk, weight=-12.0)
++    no_backward = RewardTermCfg(func=reward_move_backward_penalty, weight=-10.0)
++    forward_drive = RewardTermCfg(func=reward_forward_drive_chain, weight=6.0)
++    stall_penalty = RewardTermCfg(func=reward_stall_penalty, weight=-4.0)
++    action_rate = RewardTermCfg(func=mdp.action_rate_l2, weight=-0.10)
++    lateral_correct = RewardTermCfg(func=reward_lateral_penalty_hard, weight=-3.0)
++    lateral_velocity = RewardTermCfg(func=reward_lateral_velocity_penalty, weight=-0.8)
++    heading_align = RewardTermCfg(func=reward_heading_alignment_penalty, weight=-2.0)
+ 
+     # --- Outer Loop: 真实目标评估 (Sparse) ---
+     # 我们给一个非零的小权重，这样它们会显示在 Tensorboard 日志里
+     # 你可以通过这两个指标来判断你的 Dense Reward 设计得好不好
+-    true_success = RewardTermCfg(func=reward_true_formation_success, weight=0.1)
+-    true_fail = RewardTermCfg(func=reward_true_collision_fail, weight=-0.1)
++    true_success = RewardTermCfg(func=reward_true_formation_success, weight=0.5)
++    true_fail = RewardTermCfg(func=reward_true_collision_fail, weight=-1.0)
+ 
+-    alive = RewardTermCfg(func=mdp.is_alive, weight=1.0)
++    alive = RewardTermCfg(func=mdp.is_alive, weight=0.2)
+ 
+ 
+ @configclass
+@@ -300,12 +415,20 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+         """
+ 
+         algorithm: str = "ppo"
++        num_agents: int = 6
+         enable_teacher: bool = False
+         enable_attack: bool = False
+-        enable_shield: bool = False
+-        use_happo_layout: bool = False
+-        use_happo_actions: bool = False
+-
++        enable_shield: bool = False
++        use_happo_layout: bool = False
++        use_happo_actions: bool = False
++        happo_log_level: str = "basic"
++        happo_action_clip: float = 0.4
++        happo_action_warmup_updates: int = 0
++        happo_urdf_wheel_sign_adapter: bool = True
++        max_fdi_pos: float = -1.0
++        max_fdi_acc: float = -1.0
++        max_dos_rate: float = -1.0
++
+     @configclass
+     class SceneCfg(InteractiveSceneCfg):
+         # --- Robot 1 (领航车): 旗舰深蓝 ---
+@@ -318,7 +441,7 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+ 
+         # --- Robot 2 (跟随车): 珍珠皓白 ---
+         robot_2 = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_2")
+-        robot_2.init_state.pos = (0.0, 0.0, 0.5)
++        robot_2.init_state.pos = (-0.5, 0.0, 0.5)
+         robot_2.spawn.visual_material = PreviewSurfaceCfg(
+             diffuse_color=(0.9, 0.9, 0.9),  # 亮白
+             metallic=0.2, roughness=0.2  # 类似烤漆
+@@ -326,7 +449,7 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+ 
+         # --- Robot 3 (跟随车): 太空银灰 ---
+         robot_3 = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_3")
+-        robot_3.init_state.pos = (-1.0, 0.0, 0.5)
++        robot_3.init_state.pos = (-2.0, 0.0, 0.5)
+         robot_3.spawn.visual_material = PreviewSurfaceCfg(
+             diffuse_color=(0.5, 0.5, 0.55),  # 银灰带点蓝
+             metallic=0.8, roughness=0.3  # 强金属质感
+@@ -334,21 +457,44 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+ 
+         # --- Robot 4 (跟随车): 波尔多红 ---
+         robot_4 = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_4")
+-        robot_4.init_state.pos = (-2.0, 0.0, 0.5)
++        robot_4.init_state.pos = (-3.5, 0.0, 0.5)
+         robot_4.spawn.visual_material = PreviewSurfaceCfg(
+             diffuse_color=(0.4, 0.05, 0.05),  # 暗红
+             metallic=0.5, roughness=0.4
+         )
+ 
++        # --- Robot 5 (跟随车): 青绿色 ---
++        robot_5 = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_5")
++        robot_5.init_state.pos = (-5.0, 0.0, 0.5)
++        robot_5.spawn.visual_material = PreviewSurfaceCfg(
++            diffuse_color=(0.0, 0.35, 0.28),
++            metallic=0.4, roughness=0.35
++        )
++
++        # --- Robot 6 (跟随车): 深紫色 ---
++        robot_6 = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_6")
++        robot_6.init_state.pos = (-6.5, 0.0, 0.5)
++        robot_6.spawn.visual_material = PreviewSurfaceCfg(
++            diffuse_color=(0.22, 0.08, 0.35),
++            metallic=0.4, roughness=0.35
++        )
++
+         # 2. 地形配置 (无限平面基底)
+         terrain = TerrainImporterCfg(prim_path="/World/ground", terrain_type="plane")
+ 
+-        # 3. 高速公路实体资产
+-        highway_road = AssetBaseCfg(
+-            prim_path="{ENV_REGEX_NS}/Highway",
++        # 3. 高速公路视觉资产
++        highway_scene = AssetBaseCfg(
++            prim_path="{ENV_REGEX_NS}/HighwayScene",
++            spawn=UsdFileCfg(usd_path=HIGHWAY_USD_PATH),
++            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.012))
++        )
++
++        # 4. 高速公路物理路面
++        highway_collision = AssetBaseCfg(
++            prim_path="{ENV_REGEX_NS}/HighwayCollision",
+             spawn=CuboidCfg(
+-                size=(2000.0, 1.0, 0.1),  # 长2km，宽20m
+-                visual_material=PreviewSurfaceCfg(diffuse_color=(0.05, 0.05, 0.05)),  # 沥青色
++                size=(2000.0, 3.0, 0.1),
++                visual_material=PreviewSurfaceCfg(diffuse_color=(0.028, 0.031, 0.034)),
+                 physics_material=RigidBodyMaterialCfg(
+                     static_friction=1.2,
+                     dynamic_friction=1.0,
+@@ -359,7 +505,7 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+                     disable_gravity=True
+                 )
+             ),
+-            init_state=AssetBaseCfg.InitialStateCfg(pos=(990.0, 0.0, -0.05))
++            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.05))
+         )
+ 
+         light = AssetBaseCfg(prim_path="/World/light", spawn=DomeLightCfg(intensity=3000.0))
+@@ -368,13 +514,19 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+     observations: PlatoonObservationsCfg = PlatoonObservationsCfg()
+     rewards: PlatoonRewardsCfg = PlatoonRewardsCfg()
+     algorithm: PlatoonAlgorithmCfg = PlatoonAlgorithmCfg()
++    viewer: ViewerCfg = ViewerCfg(
++        eye=(8.0, -10.0, 6.0),
++        lookat=(-2.5, 0.0, 0.4),
++    )
+ 
+     @configclass
+     class ActionCfg:
+-        joint_vel_1 = mdp.JointVelocityActionCfg(asset_name="robot", joint_names=[".*_wheel_joint"], scale=12.0)
+-        joint_vel_2 = mdp.JointVelocityActionCfg(asset_name="robot_2", joint_names=[".*_wheel_joint"], scale=12.0)
+-        joint_vel_3 = mdp.JointVelocityActionCfg(asset_name="robot_3", joint_names=[".*_wheel_joint"], scale=12.0)
+-        joint_vel_4 = mdp.JointVelocityActionCfg(asset_name="robot_4", joint_names=[".*_wheel_joint"], scale=12.0)
++        joint_vel_1 = mdp.JointVelocityActionCfg(asset_name="robot", joint_names=[".*_wheel_joint"], scale=WHEEL_ACTION_SCALE)
++        joint_vel_2 = mdp.JointVelocityActionCfg(asset_name="robot_2", joint_names=[".*_wheel_joint"], scale=WHEEL_ACTION_SCALE)
++        joint_vel_3 = mdp.JointVelocityActionCfg(asset_name="robot_3", joint_names=[".*_wheel_joint"], scale=WHEEL_ACTION_SCALE)
++        joint_vel_4 = mdp.JointVelocityActionCfg(asset_name="robot_4", joint_names=[".*_wheel_joint"], scale=WHEEL_ACTION_SCALE)
++        joint_vel_5 = mdp.JointVelocityActionCfg(asset_name="robot_5", joint_names=[".*_wheel_joint"], scale=WHEEL_ACTION_SCALE)
++        joint_vel_6 = mdp.JointVelocityActionCfg(asset_name="robot_6", joint_names=[".*_wheel_joint"], scale=WHEEL_ACTION_SCALE)
+ 
+     actions: ActionCfg = ActionCfg()
+ 
+@@ -385,7 +537,7 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+             resampling_time_range=(20.0, 20.0),
+             debug_vis=False,
+             ranges=mdp.UniformVelocityCommandCfg.Ranges(
+-                lin_vel_x=(0.5, 0.8),
++                lin_vel_x=TARGET_SPEED_RANGE,
+                 lin_vel_y=(0.0, 0.0),
+                 ang_vel_z=(0.0, 0.0)
+             )
+@@ -401,15 +553,15 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+     terminations: TerminationsCfg = TerminationsCfg()
+ 
+     # -------------------------------------------------------------------------
+-    # 论文对齐：攻击器/Teacher/安全投影 超参数入口（先作为配置入口）
+-    # 注：真正的 CA-GAN 与 meta-gradient 更新逻辑将在训练脚本中调用这些参数
++    # 论文对齐：攻击器/Teacher/安全投影超参数入口。
++    # CA-GAN 与 meta-gradient 更新由 task-local MGRS/HAPPO pipeline 使用这些参数。
+     # -------------------------------------------------------------------------
+     @configclass
+-    class AttackCfg:
+-        enable_attack: bool = True
+-        max_fdi_pos: float = 8.0      # epsilon_p
+-        max_fdi_acc: float = 3.0      # epsilon_a
+-        max_dos_rate: float = 0.30    # rho_max
++    class AttackCfg:
++        enable_attack: bool = False
++        max_fdi_pos: float = 1.0      # epsilon_p
++        max_fdi_acc: float = 0.10     # epsilon_a
++        max_dos_rate: float = 0.02    # rho_max
+ 
+     @configclass
+     class TeacherCfg:
+@@ -418,12 +570,19 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+         realism_lambda: float = 0.1
+ 
+     @configclass
+-    class SafetyShieldCfg:
+-        enable_shield: bool = True
+-        d_crit: float = 0.50
+-        d_drop: float = 1.20
+-        brake_action: float = -1.0
+-        catchup_action: float = 0.35
++    class SafetyShieldCfg:
++        enable_shield: bool = True
++        d_crit: float = 0.50
++        d_drop: float = 2.00
++        # HAPPO actions are still in the pre-URDF-adapter convention here:
++        # negative same-sign wheel commands drive this URDF forward.
++        brake_action: float = 0.0
++        catchup_action: float = -0.35
++        lateral_tol: float = 0.12
++        lateral_crit: float = 0.45
++        lateral_turn_gain: float = 0.45
++        lateral_turn_clip: float = 0.10
++        lateral_velocity_gain: float = 0.15
+ 
+     attack: AttackCfg = AttackCfg()
+     teacher: TeacherCfg = TeacherCfg()
+@@ -434,4 +593,4 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
+ 
+     def __post_init__(self):
+         super().__post_init__()
+-        self.episode_length_s = 20.0
+\ No newline at end of file
++        self.episode_length_s = 20.0
+diff --git a/source/my_exts/marl_platoon/tasks/platoon/teacher.py b/source/my_exts/marl_platoon/tasks/platoon/teacher.py
+index abade97..ab598b8 100644
+--- a/source/my_exts/marl_platoon/tasks/platoon/teacher.py
++++ b/source/my_exts/marl_platoon/tasks/platoon/teacher.py
+@@ -3,10 +3,10 @@ import torch.nn as nn
+ 
+ 
+ class RewardTeacher(nn.Module):
+-    """简化版 Reward Teacher。
++    """Reward Teacher network F_phi(obs, action).
+ 
+-    作用：提供 F_phi(obs, action) 作为 shaped reward 增量。
+-    备注：这是“可运行骨架版”，先打通训练与日志链路，后续可替换为完整 meta-gradient 更新。
++    作用：提供 F_phi(obs, action) 作为 shaped reward 增量。实际 meta-gradient
++    更新逻辑由 task-local MGRS Teacher 模块调度。
+     """
+ 
+     def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 128):
+@@ -26,7 +26,7 @@ class RewardTeacher(nn.Module):
+ 
+ 
+ class TeacherState:
+-    """训练期 Teacher 状态容器（占位）。"""
++    """训练期 Teacher 状态容器。"""
+ 
+     def __init__(self):
+         self.enabled = True
+diff --git a/source/my_exts/marl_platoon/wrappers.py b/source/my_exts/marl_platoon/wrappers.py
+index 4412a27..1552774 100644
+--- a/source/my_exts/marl_platoon/wrappers.py
++++ b/source/my_exts/marl_platoon/wrappers.py
+@@ -1,277 +1,394 @@
+-import gymnasium as gym
+-import torch
+-from isaaclab.envs import ManagerBasedRLEnv
+-from marl_platoon.algorithms import PlatoonAlgorithmRouter
+-
+-
+-def make_happo_routed_platoon_env(*args, **kwargs):
+-    """Create the platoon env with internal HAPPO routing for experiment tasks.
+-
+-    The observation/action spaces are kept flat so the official RSL-RL runner can
+-    still launch the task unchanged. Only env reset/step are tapped to route data
+-    through the task-local HAPPO runner.
+-    """
+-    env = ManagerBasedRLEnv(*args, **kwargs)
+-    return IsaacHAPPOInternalWrapper(env, num_agents=4)
+-
+-
+-class IsaacHAPPOInternalWrapper(gym.Wrapper):
+-    """Flat-space wrapper that injects task-local HAPPO routing.
+-
+-    Unlike `IsaacMARLWrapper`, this wrapper does not expose multi-agent spaces to
+-    RSL-RL. It preserves the flat IsaacLab contract and only uses structured
+-    multi-agent tensors internally for HAPPO rollout/action override.
+-    """
+-
+-    def __init__(self, env: ManagerBasedRLEnv, num_agents: int):
+-        super().__init__(env)
+-        self.num_agents = num_agents
+-        self.observation_space = env.observation_space
+-        self.action_space = env.action_space
+-
+-        if "policy" in env.observation_manager.group_obs_dim:
+-            total_obs_dim = env.observation_manager.group_obs_dim["policy"][0]
+-        else:
+-            total_obs_dim = env.unwrapped.observation_space.shape[0]
+-        self.obs_dim = total_obs_dim // self.num_agents if total_obs_dim % self.num_agents == 0 else total_obs_dim
+-        self._broadcast_obs_to_agents = total_obs_dim % self.num_agents != 0
+-        self.act_dim = self._infer_total_action_dim() // self.num_agents
+-
+-        env_cfg = getattr(env.unwrapped, "cfg", None)
+-        algorithm_cfg = getattr(env_cfg, "algorithm", None)
+-        self.algorithm_router = (
+-            PlatoonAlgorithmRouter(env.unwrapped, algorithm_cfg)
+-            if algorithm_cfg is not None
+-            else None
+-        )
+-        self.use_happo_actions = bool(getattr(algorithm_cfg, "use_happo_actions", False))
+-        self.freeze_outer_ppo = bool(getattr(algorithm_cfg, "freeze_outer_ppo", False))
+-        self.happo_action_clip = float(getattr(algorithm_cfg, "happo_action_clip", 1.0))
+-        self.happo_action_warmup_updates = int(getattr(algorithm_cfg, "happo_action_warmup_updates", 0))
+-        self._last_agent_obs = None
+-        self._happo_log_level = str(getattr(algorithm_cfg, "happo_log_level", "basic")).lower() if algorithm_cfg is not None else "basic"
+-        if algorithm_cfg is not None and self._happo_log_level != "off":
+-            print(
+-                "[Platoon Algorithm] configured: "
+-                f"algorithm={getattr(algorithm_cfg, 'algorithm', 'ppo')}, "
+-                f"use_happo_actions={self.use_happo_actions}, "
+-                f"teacher={getattr(algorithm_cfg, 'enable_teacher', False)}, "
+-                f"attack={getattr(algorithm_cfg, 'enable_attack', False)}, "
+-                f"shield={getattr(algorithm_cfg, 'enable_shield', False)}, "
+-                f"log_level={self._happo_log_level}"
+-            )
+-
+-    def reset(self, seed=None, options=None):
+-        obs_dict, info = self.env.reset(seed=seed, options=options)
+-        obs = obs_dict["policy"] if isinstance(obs_dict, dict) and "policy" in obs_dict else obs_dict
+-        agent_obs = self._reshape_obs(obs)
+-        self._last_agent_obs = agent_obs
+-        if self.algorithm_router is not None:
+-            self.algorithm_router.build_from_sample(agent_obs)
+-        return obs_dict, info
+-
+-    def step(self, actions):
+-        used_happo_actions = False
+-        if self._should_use_happo_actions():
+-            flat_actions = self.algorithm_router.act(self._last_agent_obs)
+-            if self.happo_action_clip > 0.0:
+-                flat_actions = torch.clamp(flat_actions, -self.happo_action_clip, self.happo_action_clip)
+-            if self.algorithm_router.pipeline is not None:
+-                joint_actions = flat_actions.view(self.env.num_envs, self.num_agents, self.act_dim)
+-                flat_actions = self.algorithm_router.pipeline.postprocess_action_for_env(
+-                    self._last_agent_obs, joint_actions
+-                ).reshape(self.env.num_envs, -1)
+-            used_happo_actions = True
+-        else:
+-            # Warmup stage: still run HAPPO actor forward so rollout/update can proceed,
+-            # but keep executing the external action to avoid early destabilization.
+-            if self.algorithm_router is not None and self.algorithm_router.runner is not None and self._last_agent_obs is not None:
+-                _ = self.algorithm_router.act(self._last_agent_obs)
+-            if isinstance(actions, torch.Tensor):
+-                flat_actions = actions.reshape(self.env.num_envs, -1)
+-            else:
+-                flat_actions = torch.tensor(actions, device=self.env.device).reshape(self.env.num_envs, -1)
+-
+-        obs_dict, rew, terminated, truncated, extras = self.env.step(flat_actions)
+-        if self.freeze_outer_ppo:
+-            rew = torch.zeros_like(rew)
+-        obs = obs_dict["policy"] if isinstance(obs_dict, dict) and "policy" in obs_dict else obs_dict
+-        agent_obs = self._reshape_obs(obs)
+-
+-        if self.algorithm_router is not None and self.algorithm_router.runner is not None:
+-            dones = torch.logical_or(terminated, truncated)
+-            self.algorithm_router.observe_step(agent_obs, rew, dones)
+-            if self.algorithm_router.pipeline is None:
+-                self.algorithm_router.train_if_ready(agent_obs)
+-        self._last_agent_obs = agent_obs
+-        return obs_dict, rew, terminated, truncated, extras
+-
+-    def _should_use_happo_actions(self) -> bool:
+-        warmup_ok = True
+-        if self.algorithm_router is not None:
+-            warmup_ok = self.algorithm_router.happo_update_count >= self.happo_action_warmup_updates
+-        return (
+-            self.use_happo_actions
+-            and warmup_ok
+-            and self.algorithm_router is not None
+-            and self.algorithm_router.runner is not None
+-            and self._last_agent_obs is not None
+-        )
+-
+-    def _infer_total_action_dim(self) -> int:
+-        action_manager = getattr(self.env, "action_manager", None)
+-        for attr_name in ("action_dim", "total_action_dim", "num_actions"):
+-            value = getattr(action_manager, attr_name, None)
+-            if value is not None:
+-                return int(value)
+-        action_space = getattr(self.env, "single_action_space", None) or getattr(self.env, "action_space", None)
+-        if action_space is not None and getattr(action_space, "shape", None):
+-            return int(action_space.shape[-1])
+-        if action_manager is not None and hasattr(action_manager, "_terms"):
+-            return sum(int(getattr(term, "action_dim", 0)) for term in action_manager._terms.values())
+-        raise AttributeError("Cannot infer total action dimension from IsaacLab env/action manager.")
+-
+-    def _reshape_obs(self, obs_tensor):
+-        if not isinstance(obs_tensor, torch.Tensor):
+-            obs_tensor = torch.tensor(obs_tensor, device=self.env.device)
+-        if self._broadcast_obs_to_agents:
+-            return obs_tensor.view(self.env.num_envs, 1, self.obs_dim).repeat(1, self.num_agents, 1)
+-        return obs_tensor.view(self.env.num_envs, self.num_agents, self.obs_dim)
+-
+-
+-class IsaacMARLWrapper(gym.Wrapper):
+-    """Legacy wrapper kept for backward compatibility.
+-
+-    NOTE:
+-    - The framework-mode path used by `Isaac-Marl-Platoon-HAPPO-v0` now goes
+-      through `IsaacHAPPOInternalWrapper` + `PlatoonTrainingPipeline`.
+-    - This class is retained to avoid breaking older scripts, but new task-side
+-      algorithm routing should use the pipeline-backed wrapper.
+-    """
+-
+-    def __init__(self, env: ManagerBasedRLEnv, num_agents: int):
+-        super().__init__(env)
+-        self.num_agents = num_agents
+-
+-        # 1. 获取原始观测空间的维度
+-        # Isaac Lab 通常输出一个巨大的扁平向量，我们需要知道它原本属于几个智能体
+-        # 假设所有智能体的观测维度是一样的
+-        if "policy" in env.observation_manager.group_obs_dim:
+-            total_obs_dim = env.observation_manager.group_obs_dim["policy"][0]
+-        else:
+-            # 如果没有 'policy' 组，尝试直接获取
+-            total_obs_dim = env.unwrapped.observation_space.shape[0]
+-
+-        self.obs_dim = total_obs_dim // self.num_agents
+-        self.act_dim = env.action_manager.action_dim // self.num_agents
+-
+-        print(f"[MARL Wrapper] Detected {self.num_agents} agents.")
+-        print(f"[MARL Wrapper] Single Agent Obs Dim: {self.obs_dim}, Act Dim: {self.act_dim}")
+-
+-        env_cfg = getattr(env.unwrapped, "cfg", None)
+-        algorithm_cfg = getattr(env_cfg, "algorithm", None)
+-        self.algorithm_router = (
+-            PlatoonAlgorithmRouter(env.unwrapped, algorithm_cfg)
+-            if algorithm_cfg is not None
+-            else None
+-        )
+-        self.use_happo_actions = bool(getattr(algorithm_cfg, "use_happo_actions", False))
+-        self.freeze_outer_ppo = bool(getattr(algorithm_cfg, "freeze_outer_ppo", False))
+-        self._last_agent_obs = None
+-        if algorithm_cfg is not None:
+-            print(
+-                "[Platoon Algorithm] configured: "
+-                f"algorithm={getattr(algorithm_cfg, 'algorithm', 'ppo')}, "
+-                f"use_happo_actions={self.use_happo_actions}, "
+-                f"freeze_outer_ppo={self.freeze_outer_ppo}, "
+-                f"teacher={getattr(algorithm_cfg, 'enable_teacher', False)}, "
+-                f"attack={getattr(algorithm_cfg, 'enable_attack', False)}, "
+-                f"shield={getattr(algorithm_cfg, 'enable_shield', False)}"
+-            )
+-
+-        # 2. 重新定义 Observation Space (告诉你的算法：输入形状变了)
+-        # 现在的形状是：(智能体数量, 每个智能体的观测维度)
+-        self.observation_space = gym.spaces.Box(
+-            low=-float("inf"), high=float("inf"),
+-            shape=(self.num_agents, self.obs_dim),
+-            dtype="float32"
+-        )
+-
+-        # 3. 重新定义 Action Space
+-        self.action_space = gym.spaces.Box(
+-            low=-1.0, high=1.0,
+-            shape=(self.num_agents, self.act_dim),
+-            dtype="float32"
+-        )
+-
+-    def reset(self, seed=None, options=None):
+-        """重置环境，并处理观测数据"""
+-        obs_dict, info = self.env.reset(seed=seed, options=options)
+-
+-        # 提取 'policy' 组的观测数据 (这是主要的训练输入)
+-        if isinstance(obs_dict, dict) and "policy" in obs_dict:
+-            obs = obs_dict["policy"]
+-        else:
+-            obs = obs_dict
+-
+-        agent_obs = self._reshape_obs(obs)
+-        self._last_agent_obs = agent_obs
+-        if self.algorithm_router is not None:
+-            self.algorithm_router.build_from_sample(agent_obs)
+-        return agent_obs, info
+-
+-    def step(self, actions):
+-        """执行动作"""
+-        # 你的算法输出通常是 (num_envs, num_agents, act_dim)
+-        # Isaac Lab 的物理引擎需要扁平的 (num_envs, num_agents * act_dim)
+-        if self._should_use_happo_actions():
+-            flat_actions = self.happo_act(self._last_agent_obs)
+-        elif isinstance(actions, torch.Tensor):
+-            flat_actions = actions.reshape(self.env.num_envs, -1)
+-        else:
+-            # 如果是 numpy 数组转 tensor
+-            flat_actions = torch.tensor(actions, device=self.env.device).reshape(self.env.num_envs, -1)
+-
+-        # 放入仿真器跑一步
+-        obs_dict, rew, terminated, truncated, extras = self.env.step(flat_actions)
+-
+-        # 处理返回的观测数据
+-        if isinstance(obs_dict, dict) and "policy" in obs_dict:
+-            obs = obs_dict["policy"]
+-        else:
+-            obs = obs_dict
+-
+-        agent_obs = self._reshape_obs(obs)
+-        if self.algorithm_router is not None and self.algorithm_router.runner is not None:
+-            dones = torch.logical_or(terminated, truncated)
+-            self.algorithm_router.observe_step(agent_obs, rew, dones)
+-            self.algorithm_router.train_if_ready(agent_obs)
+-        self._last_agent_obs = agent_obs
+-
+-        # 处理奖励 (Reward)
+-        # 如果 Isaac Lab 返回的是 (num_envs, 1) 的共享奖励，你可能需要把它广播给所有智能体
+-        # 这里为了通用，我们先假设直接透传，后续根据你的算法具体调整
+-
+-        return agent_obs, rew, terminated, truncated, extras
+-
+-    def happo_act(self, obs, deterministic: bool = False):
+-        """使用任务内部 HAPPO runner 产生 IsaacLab 扁平动作。"""
+-        if self.algorithm_router is None:
+-            raise RuntimeError("Platoon algorithm router is not configured.")
+-        return self.algorithm_router.act(obs, deterministic=deterministic)
+-
+-    def _should_use_happo_actions(self) -> bool:
+-        return (
+-            self.use_happo_actions
+-            and self.algorithm_router is not None
+-            and self.algorithm_router.runner is not None
+-            and self._last_agent_obs is not None
+-        )
+-
+-    def _reshape_obs(self, obs_tensor):
+-        """核心转换逻辑：(Batch, N*Dim) -> (Batch, N, Dim)"""
+-        # 确保数据是 Tensor
+-        if not isinstance(obs_tensor, torch.Tensor):
+-            obs_tensor = torch.tensor(obs_tensor, device=self.env.device)
+-
+-        return obs_tensor.view(self.env.num_envs, self.num_agents, self.obs_dim)
+\ No newline at end of file
++import gymnasium as gym
++import torch
++from isaaclab.envs import ManagerBasedRLEnv
++from marl_platoon.algorithms import PlatoonAlgorithmRouter
++
++
++def make_happo_routed_platoon_env(*args, **kwargs):
++    """Create the platoon env with internal HAPPO routing for experiment tasks.
++
++    The observation/action spaces are kept flat so the official RSL-RL runner can
++    still launch the task unchanged. Only env reset/step are tapped to route data
++    through the task-local HAPPO runner.
++    """
++    env = ManagerBasedRLEnv(*args, **kwargs)
++    return IsaacHAPPOInternalWrapper(env, num_agents=6)
++
++
++class IsaacHAPPOInternalWrapper(gym.Wrapper):
++    """Flat-space wrapper that injects task-local HAPPO routing.
++
++    Unlike `IsaacMARLWrapper`, this wrapper does not expose multi-agent spaces to
++    RSL-RL. It preserves the flat IsaacLab contract and only uses structured
++    multi-agent tensors internally for HAPPO rollout/action override.
++    """
++
++    def __init__(self, env: ManagerBasedRLEnv, num_agents: int):
++        super().__init__(env)
++        self.num_agents = num_agents
++        self.observation_space = env.observation_space
++        self.action_space = env.action_space
++
++        if "policy" in env.observation_manager.group_obs_dim:
++            total_obs_dim = env.observation_manager.group_obs_dim["policy"][0]
++        else:
++            total_obs_dim = env.unwrapped.observation_space.shape[0]
++        self.obs_dim = total_obs_dim // self.num_agents if total_obs_dim % self.num_agents == 0 else total_obs_dim
++        self._broadcast_obs_to_agents = total_obs_dim % self.num_agents != 0
++        self.act_dim = self._infer_total_action_dim() // self.num_agents
++
++        env_cfg = getattr(env.unwrapped, "cfg", None)
++        algorithm_cfg = getattr(env_cfg, "algorithm", None)
++        self.algorithm_router = (
++            PlatoonAlgorithmRouter(env.unwrapped, algorithm_cfg)
++            if algorithm_cfg is not None
++            else None
++        )
++        self.use_happo_actions = bool(getattr(algorithm_cfg, "use_happo_actions", False))
++        self.freeze_outer_ppo = bool(getattr(algorithm_cfg, "freeze_outer_ppo", False))
++        self.happo_action_clip = float(getattr(algorithm_cfg, "happo_action_clip", 1.0))
++        self.happo_action_warmup_updates = int(getattr(algorithm_cfg, "happo_action_warmup_updates", 0))
++        self.happo_urdf_wheel_sign_adapter = bool(
++            getattr(algorithm_cfg, "happo_urdf_wheel_sign_adapter", True)
++        )
++        self._wheel_axis_signs = None
++        self._last_agent_obs = None
++        self._inference_mode = False
++        self._deterministic_actions = False
++        self._disable_online_updates = False
++        self._happo_log_level = str(getattr(algorithm_cfg, "happo_log_level", "basic")).lower() if algorithm_cfg is not None else "basic"
++        if algorithm_cfg is not None and self._happo_log_level != "off":
++            print(
++                "[Platoon Algorithm] configured: "
++                f"algorithm={getattr(algorithm_cfg, 'algorithm', 'ppo')}, "
++                f"use_happo_actions={self.use_happo_actions}, "
++                f"teacher={getattr(algorithm_cfg, 'enable_teacher', False)}, "
++                f"attack={getattr(algorithm_cfg, 'enable_attack', False)}, "
++                f"shield={getattr(algorithm_cfg, 'enable_shield', False)}, "
++                f"wheel_axis_adapter={self.happo_urdf_wheel_sign_adapter}, "
++                f"action_clip={self.happo_action_clip}, "
++                f"warmup_updates={self.happo_action_warmup_updates}, "
++                f"log_level={self._happo_log_level}"
++            )
++
++    def reset(self, seed=None, options=None):
++        obs_dict, info = self.env.reset(seed=seed, options=options)
++        obs = obs_dict["policy"] if isinstance(obs_dict, dict) and "policy" in obs_dict else obs_dict
++        agent_obs = self._reshape_obs(obs)
++        self._last_agent_obs = agent_obs
++        if self.algorithm_router is not None:
++            self.algorithm_router.build_from_sample(agent_obs)
++            if self._inference_mode:
++                self.algorithm_router.set_inference_mode(
++                    deterministic=self._deterministic_actions,
++                    disable_updates=self._disable_online_updates,
++                    disable_attack=True,
++                )
++        return obs_dict, info
++
++    def step(self, actions):
++        used_happo_actions = False
++        if self._should_use_happo_actions():
++            flat_actions = self.algorithm_router.act(
++                self._last_agent_obs,
++                deterministic=self._deterministic_actions,
++            )
++            raw_happo_actions = flat_actions
++            if self.happo_action_clip > 0.0:
++                flat_actions = torch.clamp(flat_actions, -self.happo_action_clip, self.happo_action_clip)
++            clipped_happo_actions = flat_actions
++            joint_actions = flat_actions.view(self.env.num_envs, self.num_agents, self.act_dim)
++            if self.algorithm_router.pipeline is not None:
++                joint_actions = self.algorithm_router.pipeline.postprocess_action_for_env(
++                    self._last_agent_obs, joint_actions
++                )
++            if self.happo_action_clip > 0.0:
++                joint_actions = torch.clamp(joint_actions, -self.happo_action_clip, self.happo_action_clip)
++            joint_actions = self._adapt_wheel_axes_for_env(joint_actions)
++            flat_actions = joint_actions.reshape(self.env.num_envs, -1)
++            if (
++                self._happo_log_level == "debug"
++                and not hasattr(self, "_debug_happo_action_once")
++                and self.algorithm_router.happo_action_steps >= 20
++            ):
++                self._debug_happo_action_once = True
++                print("[DEBUG][happo_action] raw_leader[0]=", raw_happo_actions[0, : self.act_dim].detach().cpu().tolist())
++                print("[DEBUG][happo_action] clipped_leader[0]=", clipped_happo_actions[0, : self.act_dim].detach().cpu().tolist())
++                print("[DEBUG][happo_action] env_leader[0]=", flat_actions[0, : self.act_dim].detach().cpu().tolist())
++            used_happo_actions = True
++        else:
++            # Warmup stage: still run HAPPO actor forward so rollout/update can proceed,
++            # but keep executing the external action to avoid early destabilization.
++            if self.algorithm_router is not None and self.algorithm_router.runner is not None and self._last_agent_obs is not None:
++                _ = self.algorithm_router.act(
++                    self._last_agent_obs,
++                    deterministic=self._deterministic_actions,
++                )
++            if isinstance(actions, torch.Tensor):
++                flat_actions = actions.reshape(self.env.num_envs, -1)
++            else:
++                flat_actions = torch.tensor(actions, device=self.env.device).reshape(self.env.num_envs, -1)
++            if self.algorithm_router is not None and self.happo_action_clip > 0.0:
++                flat_actions = torch.clamp(flat_actions, -self.happo_action_clip, self.happo_action_clip)
++
++        if self.happo_action_clip > 0.0:
++            flat_actions = torch.clamp(flat_actions, -self.happo_action_clip, self.happo_action_clip)
++        obs_dict, rew, terminated, truncated, extras = self.env.step(flat_actions)
++        student_rew = rew
++        outer_rew = torch.zeros_like(rew) if self.freeze_outer_ppo else rew
++        obs = obs_dict["policy"] if isinstance(obs_dict, dict) and "policy" in obs_dict else obs_dict
++        agent_obs = self._reshape_obs(obs)
++
++        if (
++            not self._disable_online_updates
++            and self.algorithm_router is not None
++            and self.algorithm_router.runner is not None
++        ):
++            dones = torch.logical_or(terminated, truncated)
++            self.algorithm_router.observe_step(agent_obs, student_rew, dones)
++            if self.algorithm_router.pipeline is None:
++                self.algorithm_router.train_if_ready(agent_obs)
++        self._last_agent_obs = agent_obs
++        return obs_dict, outer_rew, terminated, truncated, extras
++
++    def _should_use_happo_actions(self) -> bool:
++        warmup_ok = True
++        if self.algorithm_router is not None:
++            warmup_ok = self.algorithm_router.happo_update_count >= self.happo_action_warmup_updates
++        return (
++            self.use_happo_actions
++            and warmup_ok
++            and self.algorithm_router is not None
++            and self.algorithm_router.runner is not None
++            and self._last_agent_obs is not None
++        )
++
++    def set_inference_mode(
++        self,
++        *,
++        deterministic: bool = True,
++        disable_updates: bool = True,
++        force_happo_actions: bool = True,
++        disable_attack: bool = True,
++    ) -> None:
++        """Switch task-local HAPPO routing to play/evaluation behavior."""
++        self._inference_mode = True
++        self._deterministic_actions = bool(deterministic)
++        self._disable_online_updates = bool(disable_updates)
++        if force_happo_actions:
++            self.use_happo_actions = True
++            self.happo_action_warmup_updates = 0
++        if self.algorithm_router is not None:
++            self.algorithm_router.set_inference_mode(
++                deterministic=deterministic,
++                disable_updates=disable_updates,
++                disable_attack=disable_attack,
++            )
++
++    def state_dict(self) -> dict:
++        if self.algorithm_router is None:
++            return {}
++        return self.algorithm_router.state_dict()
++
++    def load_state_dict(self, state: dict, strict: bool = True) -> None:
++        if self.algorithm_router is None:
++            raise RuntimeError("Platoon algorithm router is not configured.")
++        if self.algorithm_router.runner is None:
++            if self._last_agent_obs is None:
++                raise RuntimeError("Cannot load HAPPO state before reset/build.")
++            self.algorithm_router.build_from_sample(self._last_agent_obs)
++        self.algorithm_router.load_state_dict(state, strict=strict)
++
++    def _infer_total_action_dim(self) -> int:
++        action_manager = getattr(self.env, "action_manager", None)
++        for attr_name in ("action_dim", "total_action_dim", "num_actions"):
++            value = getattr(action_manager, attr_name, None)
++            if value is not None:
++                return int(value)
++        action_space = getattr(self.env, "single_action_space", None) or getattr(self.env, "action_space", None)
++        if action_space is not None and getattr(action_space, "shape", None):
++            return int(action_space.shape[-1])
++        if action_manager is not None and hasattr(action_manager, "_terms"):
++            return sum(int(getattr(term, "action_dim", 0)) for term in action_manager._terms.values())
++        raise AttributeError("Cannot infer total action dimension from IsaacLab env/action manager.")
++
++    def _adapt_wheel_axes_for_env(self, joint_actions: torch.Tensor) -> torch.Tensor:
++        if not self.happo_urdf_wheel_sign_adapter or joint_actions.shape[-1] != 4:
++            return joint_actions
++        signs = self._get_wheel_axis_signs(joint_actions.device, joint_actions.dtype)
++        if signs is None:
++            return joint_actions
++        return joint_actions * signs
++
++    def _get_wheel_axis_signs(self, device, dtype):
++        if self._wheel_axis_signs is not None:
++            return self._wheel_axis_signs.to(device=device, dtype=dtype)
++
++        action_terms = getattr(getattr(self.env, "action_manager", None), "_terms", {})
++        signs = torch.ones((1, self.num_agents, self.act_dim), device=device, dtype=dtype)
++        resolved_names = []
++        for agent_id in range(self.num_agents):
++            term = action_terms.get(f"joint_vel_{agent_id + 1}") if isinstance(action_terms, dict) else None
++            joint_names = getattr(term, "_joint_names", None) or []
++            resolved_names.append(list(joint_names))
++            if len(joint_names) != self.act_dim:
++                if self.act_dim == 4:
++                    signs[:, agent_id, :] = torch.tensor([1.0, 1.0, -1.0, -1.0], device=device, dtype=dtype)
++                continue
++            for joint_id, joint_name in enumerate(joint_names):
++                name = str(joint_name).lower()
++                if name.startswith(("r", "right")) or "_r" in name or "right" in name:
++                    signs[:, agent_id, joint_id] = -1.0
++
++        self._wheel_axis_signs = signs
++        if self._happo_log_level != "off" and not hasattr(self, "_printed_wheel_axis_adapter"):
++            self._printed_wheel_axis_adapter = True
++            print(
++                "[Platoon HAPPO] URDF wheel-axis adapter active: "
++                f"signs={signs[0].detach().cpu().tolist()}, joint_names={resolved_names}"
++            )
++        return signs
++
++    def _reshape_obs(self, obs_tensor):
++        if not isinstance(obs_tensor, torch.Tensor):
++            obs_tensor = torch.tensor(obs_tensor, device=self.env.device)
++        if self._broadcast_obs_to_agents:
++            return obs_tensor.view(self.env.num_envs, 1, self.obs_dim).repeat(1, self.num_agents, 1)
++        return obs_tensor.view(self.env.num_envs, self.num_agents, self.obs_dim)
++
++
++class IsaacMARLWrapper(gym.Wrapper):
++    """Legacy wrapper kept for backward compatibility.
++
++    NOTE:
++    - The framework-mode path used by `Isaac-Marl-Platoon-HAPPO-v0` now goes
++      through `IsaacHAPPOInternalWrapper` + `PlatoonTrainingPipeline`.
++    - This class is retained to avoid breaking older scripts, but new task-side
++      algorithm routing should use the pipeline-backed wrapper.
++    """
++
++    def __init__(self, env: ManagerBasedRLEnv, num_agents: int):
++        super().__init__(env)
++        self.num_agents = num_agents
++
++        # 1. 获取原始观测空间的维度
++        # Isaac Lab 通常输出一个巨大的扁平向量，我们需要知道它原本属于几个智能体
++        # 假设所有智能体的观测维度是一样的
++        if "policy" in env.observation_manager.group_obs_dim:
++            total_obs_dim = env.observation_manager.group_obs_dim["policy"][0]
++        else:
++            # 如果没有 'policy' 组，尝试直接获取
++            total_obs_dim = env.unwrapped.observation_space.shape[0]
++
++        self.obs_dim = total_obs_dim // self.num_agents
++        self.act_dim = env.action_manager.action_dim // self.num_agents
++
++        print(f"[MARL Wrapper] Detected {self.num_agents} agents.")
++        print(f"[MARL Wrapper] Single Agent Obs Dim: {self.obs_dim}, Act Dim: {self.act_dim}")
++
++        env_cfg = getattr(env.unwrapped, "cfg", None)
++        algorithm_cfg = getattr(env_cfg, "algorithm", None)
++        self.algorithm_router = (
++            PlatoonAlgorithmRouter(env.unwrapped, algorithm_cfg)
++            if algorithm_cfg is not None
++            else None
++        )
++        self.use_happo_actions = bool(getattr(algorithm_cfg, "use_happo_actions", False))
++        self.freeze_outer_ppo = bool(getattr(algorithm_cfg, "freeze_outer_ppo", False))
++        self._last_agent_obs = None
++        if algorithm_cfg is not None:
++            print(
++                "[Platoon Algorithm] configured: "
++                f"algorithm={getattr(algorithm_cfg, 'algorithm', 'ppo')}, "
++                f"use_happo_actions={self.use_happo_actions}, "
++                f"freeze_outer_ppo={self.freeze_outer_ppo}, "
++                f"teacher={getattr(algorithm_cfg, 'enable_teacher', False)}, "
++                f"attack={getattr(algorithm_cfg, 'enable_attack', False)}, "
++                f"shield={getattr(algorithm_cfg, 'enable_shield', False)}"
++            )
++
++        # 2. 重新定义 Observation Space (告诉你的算法：输入形状变了)
++        # 现在的形状是：(智能体数量, 每个智能体的观测维度)
++        self.observation_space = gym.spaces.Box(
++            low=-float("inf"), high=float("inf"),
++            shape=(self.num_agents, self.obs_dim),
++            dtype="float32"
++        )
++
++        # 3. 重新定义 Action Space
++        self.action_space = gym.spaces.Box(
++            low=-1.0, high=1.0,
++            shape=(self.num_agents, self.act_dim),
++            dtype="float32"
++        )
++
++    def reset(self, seed=None, options=None):
++        """重置环境，并处理观测数据"""
++        obs_dict, info = self.env.reset(seed=seed, options=options)
++
++        # 提取 'policy' 组的观测数据 (这是主要的训练输入)
++        if isinstance(obs_dict, dict) and "policy" in obs_dict:
++            obs = obs_dict["policy"]
++        else:
++            obs = obs_dict
++
++        agent_obs = self._reshape_obs(obs)
++        self._last_agent_obs = agent_obs
++        if self.algorithm_router is not None:
++            self.algorithm_router.build_from_sample(agent_obs)
++        return agent_obs, info
++
++    def step(self, actions):
++        """执行动作"""
++        # 你的算法输出通常是 (num_envs, num_agents, act_dim)
++        # Isaac Lab 的物理引擎需要扁平的 (num_envs, num_agents * act_dim)
++        if self._should_use_happo_actions():
++            flat_actions = self.happo_act(self._last_agent_obs)
++        elif isinstance(actions, torch.Tensor):
++            flat_actions = actions.reshape(self.env.num_envs, -1)
++        else:
++            # 如果是 numpy 数组转 tensor
++            flat_actions = torch.tensor(actions, device=self.env.device).reshape(self.env.num_envs, -1)
++
++        # 放入仿真器跑一步
++        obs_dict, rew, terminated, truncated, extras = self.env.step(flat_actions)
++
++        # 处理返回的观测数据
++        if isinstance(obs_dict, dict) and "policy" in obs_dict:
++            obs = obs_dict["policy"]
++        else:
++            obs = obs_dict
++
++        agent_obs = self._reshape_obs(obs)
++        if self.algorithm_router is not None and self.algorithm_router.runner is not None:
++            dones = torch.logical_or(terminated, truncated)
++            self.algorithm_router.observe_step(agent_obs, rew, dones)
++            self.algorithm_router.train_if_ready(agent_obs)
++        self._last_agent_obs = agent_obs
++
++        # 返回原始 IsaacLab 奖励；task-local HAPPO/MGRS 路径已在
++        # algorithm_router.observe_step() 中处理多智能体奖励与 Teacher shaping。
++
++        return agent_obs, rew, terminated, truncated, extras
++
++    def happo_act(self, obs, deterministic: bool = False):
++        """使用任务内部 HAPPO runner 产生 IsaacLab 扁平动作。"""
++        if self.algorithm_router is None:
++            raise RuntimeError("Platoon algorithm router is not configured.")
++        return self.algorithm_router.act(obs, deterministic=deterministic)
++
++    def _should_use_happo_actions(self) -> bool:
++        return (
++            self.use_happo_actions
++            and self.algorithm_router is not None
++            and self.algorithm_router.runner is not None
++            and self._last_agent_obs is not None
++        )
++
++    def _reshape_obs(self, obs_tensor):
++        """核心转换逻辑：(Batch, N*Dim) -> (Batch, N, Dim)"""
++        # 确保数据是 Tensor
++        if not isinstance(obs_tensor, torch.Tensor):
++            obs_tensor = torch.tensor(obs_tensor, device=self.env.device)
++
++        return obs_tensor.view(self.env.num_envs, self.num_agents, self.obs_dim)

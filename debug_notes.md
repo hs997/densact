@@ -1221,6 +1221,10 @@ Recommended next run after lateral fixes:
   - exclude `.venv/`, `logs/`, `*.pt`, `*.pth`, and the large `Melodic_wheeltec_robot_src_250707/` resource tree from the code backup.
 - Reason:
   - GitHub should receive the reproducible code/config/debug notes, not local virtual environments, training logs, model checkpoints, or GB-scale robot asset archives.
+- Push result:
+  - Commit created: `8a9d434 Backup platoon HAPPO no-attack baseline`
+  - Pushed successfully to `origin/freeze/cagan-step3-dualchannel-logging`.
+  - Large local files remain intentionally untracked and local-only.
 
 ## Restore Command For Future Chats
 

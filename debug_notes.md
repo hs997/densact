@@ -1521,3 +1521,11 @@ Tell Codex:
 - Current recommendation:
   - Use `model_700.pt` from this run.
   - Use no attack, speed range `[0.30, 0.45]`, wheel scale `12.5`, action clip `0.4`, lateral gain `0.32`, centerline gain `0.28`, pair3 scale `0.85`, pair4 scale `0.90`, catchup action `-0.355`, and `d_drop=1.45`.
+- GitHub backup:
+  - Pushed to `git@github.com:hs997/densact.git`
+  - branch: `freeze/cagan-step3-dualchannel-logging`
+  - commit: `78ec599 Add high-speed platoon model 700 backup`
+  - included tracked backup artifacts:
+    - `model_700.pt`
+    - `eval_model700_ddrop145_2000/eval_summary.csv`
+    - `eval_model700_ddrop145_2000/eval_steps_model_700.csv`

@@ -497,13 +497,16 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
         local_reward_shaping: bool = True
         local_reward_centerline_coef: float = 0.35
         local_reward_pair_lateral_coef: float = 0.55
+        local_reward_gap_coef: float = 0.0
         local_reward_heading_coef: float = 0.15
         local_reward_turn_coef: float = 0.005
         local_reward_first_follower_centerline_scale: float = 1.0
         local_reward_first_follower_pair_lateral_scale: float = 1.0
+        local_reward_first_follower_gap_scale: float = 1.0
         local_reward_first_follower_turn_scale: float = 1.0
         local_reward_last_follower_centerline_scale: float = 1.0
         local_reward_last_follower_pair_lateral_scale: float = 1.0
+        local_reward_last_follower_gap_scale: float = 1.0
         local_reward_last_follower_turn_scale: float = 1.0
         max_fdi_pos: float = -1.0
         max_fdi_acc: float = -1.0
@@ -644,11 +647,13 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
     class SafetyShieldCfg:
         enable_shield: bool = True
         d_crit: float = 0.50
-        d_drop: float = 2.00
+        d_drop: float = 1.45
         # HAPPO actions are still in the pre-URDF-adapter convention here:
         # negative same-sign wheel commands drive this URDF forward.
         brake_action: float = 0.0
         catchup_action: float = -0.35
+        catchup_lateral_limit: float = -1.0
+        catchup_centerline_limit: float = -1.0
         lateral_tol: float = 0.035
         lateral_crit: float = 0.55
         lateral_turn_gain: float = 0.30
@@ -664,6 +669,17 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
         pair2_lateral_gain_scale: float = 1.0
         pair2_lateral_clip_scale: float = 1.0
         pair2_lateral_clip_max: float = 0.10
+        pair3_lateral_gain_scale: float = 1.0
+        pair3_lateral_clip_scale: float = 1.0
+        pair3_lateral_clip_max: float = 0.10
+        pair4_lateral_gain_scale: float = 1.0
+        pair4_lateral_clip_scale: float = 1.0
+        pair4_lateral_clip_max: float = 0.10
+        forward_bias_gain: float = 0.0
+        forward_bias_clip: float = 0.0
+        forward_bias_speed_margin: float = 0.02
+        forward_bias_min_command: float = 0.0
+        forward_bias_min_gap: float = 0.75
 
     attack: AttackCfg = AttackCfg()
     teacher: TeacherCfg = TeacherCfg()

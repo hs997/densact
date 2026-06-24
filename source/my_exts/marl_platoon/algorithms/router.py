@@ -131,6 +131,7 @@ class PlatoonAlgorithmRouter:
             "local_reward_shaping_mean",
             "local_reward_centerline_penalty_mean",
             "local_reward_pair_lateral_penalty_mean",
+            "local_reward_gap_penalty_mean",
             "local_reward_heading_penalty_mean",
             "local_reward_turn_penalty_mean",
             "reward_leader_motion",
@@ -367,6 +368,8 @@ class PlatoonAlgorithmRouter:
                 d_drop=float(getattr(safety_cfg, "d_drop", 1.20)),
                 brake_action=float(getattr(safety_cfg, "brake_action", 0.0)),
                 catchup_action=float(getattr(safety_cfg, "catchup_action", -0.35)),
+                catchup_lateral_limit=float(getattr(safety_cfg, "catchup_lateral_limit", -1.0)),
+                catchup_centerline_limit=float(getattr(safety_cfg, "catchup_centerline_limit", -1.0)),
                 lateral_tol=float(getattr(safety_cfg, "lateral_tol", 0.08)),
                 lateral_crit=float(getattr(safety_cfg, "lateral_crit", 0.35)),
                 lateral_turn_gain=float(getattr(safety_cfg, "lateral_turn_gain", 0.70)),
@@ -382,6 +385,17 @@ class PlatoonAlgorithmRouter:
                 pair2_lateral_gain_scale=float(getattr(safety_cfg, "pair2_lateral_gain_scale", 1.0)),
                 pair2_lateral_clip_scale=float(getattr(safety_cfg, "pair2_lateral_clip_scale", 1.0)),
                 pair2_lateral_clip_max=float(getattr(safety_cfg, "pair2_lateral_clip_max", 0.18)),
+                pair3_lateral_gain_scale=float(getattr(safety_cfg, "pair3_lateral_gain_scale", 1.0)),
+                pair3_lateral_clip_scale=float(getattr(safety_cfg, "pair3_lateral_clip_scale", 1.0)),
+                pair3_lateral_clip_max=float(getattr(safety_cfg, "pair3_lateral_clip_max", 0.18)),
+                pair4_lateral_gain_scale=float(getattr(safety_cfg, "pair4_lateral_gain_scale", 1.0)),
+                pair4_lateral_clip_scale=float(getattr(safety_cfg, "pair4_lateral_clip_scale", 1.0)),
+                pair4_lateral_clip_max=float(getattr(safety_cfg, "pair4_lateral_clip_max", 0.18)),
+                forward_bias_gain=float(getattr(safety_cfg, "forward_bias_gain", 0.0)),
+                forward_bias_clip=float(getattr(safety_cfg, "forward_bias_clip", 0.0)),
+                forward_bias_speed_margin=float(getattr(safety_cfg, "forward_bias_speed_margin", 0.02)),
+                forward_bias_min_command=float(getattr(safety_cfg, "forward_bias_min_command", 0.0)),
+                forward_bias_min_gap=float(getattr(safety_cfg, "forward_bias_min_gap", 0.75)),
             ),
         )
         self.pipeline = PlatoonTrainingPipeline(
@@ -957,6 +971,8 @@ class PlatoonAlgorithmRouter:
             "shield_first_follower_centerline_turn_mean": float(
                 stats.get("shield_first_follower_centerline_turn_mean", 0.0)
             ),
+            "shield_forward_bias_rate": float(stats.get("shield_forward_bias_rate", 0.0)),
+            "shield_forward_bias_mean": float(stats.get("shield_forward_bias_mean", 0.0)),
         }
 
     def train_if_ready(self, next_obs: Any) -> tuple[list[dict[str, float]], dict[str, float]] | None:
@@ -1008,15 +1024,18 @@ class PlatoonAlgorithmRouter:
 
         centerline_coef = float(getattr(self.cfg, "local_reward_centerline_coef", 0.0))
         pair_lateral_coef = float(getattr(self.cfg, "local_reward_pair_lateral_coef", 0.0))
+        gap_coef = float(getattr(self.cfg, "local_reward_gap_coef", 0.0))
         heading_coef = float(getattr(self.cfg, "local_reward_heading_coef", 0.0))
         turn_coef = float(getattr(self.cfg, "local_reward_turn_coef", 0.0))
         first_centerline_scale = float(getattr(self.cfg, "local_reward_first_follower_centerline_scale", 1.0))
         first_pair_lateral_scale = float(getattr(self.cfg, "local_reward_first_follower_pair_lateral_scale", 1.0))
+        first_gap_scale = float(getattr(self.cfg, "local_reward_first_follower_gap_scale", 1.0))
         first_turn_scale = float(getattr(self.cfg, "local_reward_first_follower_turn_scale", 1.0))
         last_centerline_scale = float(getattr(self.cfg, "local_reward_last_follower_centerline_scale", 1.0))
         last_pair_lateral_scale = float(getattr(self.cfg, "local_reward_last_follower_pair_lateral_scale", 1.0))
+        last_gap_scale = float(getattr(self.cfg, "local_reward_last_follower_gap_scale", 1.0))
         last_turn_scale = float(getattr(self.cfg, "local_reward_last_follower_turn_scale", 1.0))
-        if max(centerline_coef, pair_lateral_coef, heading_coef, turn_coef) <= 0.0:
+        if max(centerline_coef, pair_lateral_coef, gap_coef, heading_coef, turn_coef) <= 0.0:
             return rewards_tensor
 
         try:
@@ -1025,6 +1044,7 @@ class PlatoonAlgorithmRouter:
             num_agents = min(self.num_agents, rewards_tensor.shape[1], len(robots))
             centerline_penalty = torch.zeros((num_envs, num_agents), device=self.device)
             pair_lateral_penalty = torch.zeros_like(centerline_penalty)
+            gap_penalty = torch.zeros_like(centerline_penalty)
             heading_penalty = torch.zeros_like(centerline_penalty)
             turn_penalty = torch.zeros_like(centerline_penalty)
 
@@ -1056,6 +1076,14 @@ class PlatoonAlgorithmRouter:
                     critical=0.25,
                     hard_weight=4.0,
                 )
+                follower_speed = torch.clamp(foll.data.root_lin_vel_b[:, 0].to(self.device), min=0.0)
+                desired_gap = 1.5 + 0.6 * follower_speed
+                gap_penalty[:, agent_idx] = self._soft_hard_penalty(
+                    (rel[:, 0] + desired_gap).abs(),
+                    deadzone=0.08,
+                    critical=0.45,
+                    hard_weight=3.0,
+                )
                 pair_alignment = torch.sum(heading_vecs[agent_idx - 1] * heading_vecs[agent_idx], dim=-1).clamp(-1.0, 1.0)
                 heading_penalty[:, agent_idx] += 0.5 * (1.0 - pair_alignment)
 
@@ -1072,15 +1100,18 @@ class PlatoonAlgorithmRouter:
             if num_agents > 1:
                 centerline_penalty[:, 1] *= first_centerline_scale
                 pair_lateral_penalty[:, 1] *= first_pair_lateral_scale
+                gap_penalty[:, 1] *= first_gap_scale
                 turn_penalty[:, 1] *= first_turn_scale
                 last_idx = num_agents - 1
                 centerline_penalty[:, last_idx] *= last_centerline_scale
                 pair_lateral_penalty[:, last_idx] *= last_pair_lateral_scale
+                gap_penalty[:, last_idx] *= last_gap_scale
                 turn_penalty[:, last_idx] *= last_turn_scale
 
             shaping = -(
                 centerline_coef * centerline_penalty
                 + pair_lateral_coef * pair_lateral_penalty
+                + gap_coef * gap_penalty
                 + heading_coef * heading_penalty
                 + turn_coef * turn_penalty
             )
@@ -1088,6 +1119,7 @@ class PlatoonAlgorithmRouter:
                 "local_reward_shaping_mean": float(shaping.mean().item()),
                 "local_reward_centerline_penalty_mean": float(centerline_penalty.mean().item()),
                 "local_reward_pair_lateral_penalty_mean": float(pair_lateral_penalty.mean().item()),
+                "local_reward_gap_penalty_mean": float(gap_penalty.mean().item()),
                 "local_reward_heading_penalty_mean": float(heading_penalty.mean().item()),
                 "local_reward_turn_penalty_mean": float(turn_penalty.mean().item()),
             }

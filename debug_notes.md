@@ -1225,6 +1225,16 @@ Recommended next run after lateral fixes:
   - Commit created: `8a9d434 Backup platoon HAPPO no-attack baseline`
   - Pushed successfully to `origin/freeze/cagan-step3-dualchannel-logging`.
   - Large local files remain intentionally untracked and local-only.
+- Restore/download commands for this backup:
+  - New clone:
+    - `git clone -b freeze/cagan-step3-dualchannel-logging git@github.com:hs997/densact.git`
+  - Existing repo:
+    - `git fetch origin`
+    - `git switch freeze/cagan-step3-dualchannel-logging`
+    - `git pull --ff-only origin freeze/cagan-step3-dualchannel-logging`
+  - Exact backup commit if needed:
+    - `git switch -c restore-platoon-noattack-baseline 4dfe279`
+  - Note: model checkpoints under `logs/` and `*.pt` were intentionally not pushed to GitHub.
 
 ## Restore Command For Future Chats
 
@@ -1233,3 +1243,281 @@ Tell Codex:
 ```text
 请先读取 /home/cnc/SSD_1T/xzw/IsaacLab-main/debug_notes.md，然后继续执行里面的 Next Steps，优先排查 HAPPO leader 不动的问题。每次回复结束前把新的关键结论更新回这个 md 文件。
 ```
+
+2026-06-24 speed-up test after clean no-attack baseline:
+
+- Baseline checkpoint kept as source:
+  - `logs/rsl_rl/platoon_happo/2026-06-23_22-37-20_platoon5_clean_noattack_v8_centerline_from150_ft200/model_final.pt`
+  - This is still the checkpoint the user visually played and reported as good.
+- A 120-update speed fine-tune was tested:
+  - Run: `logs/rsl_rl/platoon_happo/2026-06-24_11-45-47_platoon5_speed_ft_scale125_noattack`
+  - Training config: attack off, command `[0.30,0.45]`, wheel scale `12.5`, mild stronger local reward.
+  - Deterministic 1000-step eval showed all fine-tuned checkpoints improved speed but degraded centerline/lateral compared with the original baseline:
+    - `model_400.pt`: leader `0.365`, platoon `0.317`, speed_err `0.069`, center `0.089`, lateral `0.141`
+    - `model_450.pt`: leader `0.365`, platoon `0.317`, speed_err `0.057`, center `0.102`, lateral `0.134`
+    - `model_final.pt`: leader `0.365`, platoon `0.318`, speed_err `0.068`, center `0.102`, lateral `0.135`
+  - Decision: do not adopt the fine-tuned speed run checkpoints.
+- Fair single-checkpoint baseline eval:
+  - Output: `eval_baseline_scale120_single_cmd030_045_1000/eval_summary.csv`
+  - Baseline scale `12.0`: leader `0.352`, platoon `0.304`, speed_err `0.078`, center `0.082`, lateral `0.133`, gap `0.290`, bad reset `0`, attack `0`.
+- Best tested speed-up without changing checkpoint:
+  - Use original `model_final.pt`, keep attack off, set wheel scale to `12.5`.
+  - Add mild shield overrides:
+    - `env.safety_shield.lateral_turn_gain=0.32`
+    - `env.safety_shield.centerline_turn_gain=0.28`
+  - Keep shield clips at defaults (`0.08`); do not use the earlier strong shield.
+  - Eval output: `eval_speedup_scale125_shield_mild_cmd030_045_1000/eval_summary.csv`
+  - Result:
+    - leader `0.365` vs baseline `0.352`
+    - platoon `0.316` vs baseline `0.304`
+    - speed_err `0.070` vs baseline `0.078`
+    - center `0.082` vs baseline `0.082`
+    - center max mean `0.174` vs baseline `0.180`
+    - lateral `0.132` vs baseline `0.133`
+    - lateral max mean `0.254` vs baseline `0.266`
+    - pair_1 `0.130` vs baseline `0.139`
+    - pair_2 `0.191` vs baseline `0.203`
+    - bad reset `0`, attack `0`
+  - Tradeoff:
+    - gap worsens from `0.290` to `0.302`
+    - pair_3 worsens from `0.070` to `0.086`
+    - pair_4 worsens from `0.118` to `0.122`
+  - Interpretation: this is the best current aggregate speed-up config, but it is not a strict every-metric improvement.
+- Additional catch-up tests:
+  - `scale=12.5`, mild shield, `catchup_action=-0.38`:
+    - leader `0.365`, platoon `0.319`, speed_err `0.067`, center `0.083`, lateral `0.127`, gap `0.284`
+    - improves gap/lateral/speed more than mild-only, but center max peak worsens (`0.269` vs baseline `0.252`) and pair_3/pair_4 still worsen.
+  - `scale=12.5`, mild shield, `catchup_action=-0.40`:
+    - leader `0.365`, platoon `0.320`, speed_err `0.067`, center `0.086`, lateral `0.127`, gap `0.275`
+    - too much centerline degradation; do not recommend as default.
+- Current recommendation:
+  - For visual play and speed-up testing, prefer the original baseline checkpoint with `scale=12.5` plus mild shield overrides.
+  - If strict gap is more important than centerline max, test `catchup_action=-0.38` visually as an alternate, but do not make it the default yet.
+  - Do not use `2026-06-24_11-45-47_platoon5_speed_ft_scale125_noattack/model_final.pt` as the main policy.
+
+2026-06-24 why higher speed worsens some metrics:
+
+- The current no-attack policy often saturates wheel actions near `happo_action_clip=0.4`; increasing wheel scale raises actual speed mostly by amplifying saturated actions, not by learning a smoother high-speed controller.
+- Higher forward speed increases the same steering/formation correction delay:
+  - lateral error has less time to decay before the vehicle moves farther forward;
+  - heading correction overshoot becomes larger;
+  - downstream pair errors propagate faster from pair_1/pair_2 into pair_3/pair_4.
+- Stronger speed/catch-up action can fix gap and platoon speed, but it also pushes followers harder while they are laterally correcting, which increases centerline max or tail-pair deviation.
+- Mild shield helps because it adds deterministic lateral/centerline correction without retraining, but if shield or catch-up is too strong it can fight pairwise formation and move the error downstream.
+- Current best practical conclusion:
+  - `scale=12.5 + mild shield` is a good aggregate speed-up.
+  - `catchup_action=-0.38` is a stronger speed/gap variant but needs visual validation because centerline max and tail pairs worsen slightly.
+  - A fully clean high-speed model likely needs a dedicated high-speed curriculum, not just scaling actions after a low-speed policy has saturated.
+
+2026-06-24 high-speed curriculum attempt and final speed-up decision:
+
+- Code changes made for controlled experiments:
+  - Added optional `local_reward_gap_coef`, `local_reward_first_follower_gap_scale`, and `local_reward_last_follower_gap_scale` in `PlatoonAlgorithmRouter`.
+  - Added optional shield controls for `pair3_lateral_*` and `pair4_lateral_*` so tail-pair correction can be tested without changing defaults.
+  - Added optional guarded catch-up controls:
+    - `env.safety_shield.catchup_lateral_limit`
+    - `env.safety_shield.catchup_centerline_limit`
+  - All new controls default to disabled/no-op behavior except local gap metrics logging, so the previous good baseline behavior is preserved unless overrides are passed.
+  - Compile check passed:
+    - `python3 -m py_compile source/my_exts/marl_platoon/algorithms/shield.py source/my_exts/marl_platoon/algorithms/router.py source/my_exts/marl_platoon/tasks/platoon/config.py`
+- High-speed curriculum S1/S2/S3 training did not produce a better checkpoint:
+  - S1 run:
+    - `logs/rsl_rl/platoon_happo/2026-06-24_12-17-24_platoon5_highspeed_curriculum_s1_scale125_tail`
+    - `model_400.pt` had speed improvement but gap worsened to `0.313`; do not adopt.
+  - S2 run with gap reward:
+    - `logs/rsl_rl/platoon_happo/2026-06-24_12-35-42_platoon5_highspeed_curriculum_s2_gap_from400`
+    - Training metrics looked better, but deterministic eval worsened center/lateral; do not adopt.
+  - S3 run from the clean baseline with low LR and gap shaping:
+    - `logs/rsl_rl/platoon_happo/2026-06-24_12-54-57_platoon5_highspeed_curriculum_s3_lowrl_gap_from_clean`
+    - No bad-orientation resets during training, but deterministic eval was worse than the original checkpoint parameter-only speed-up:
+      - `model_350.pt`: leader `0.365`, platoon `0.316`, speed_err `0.070`, center `0.084`, lateral `0.133`, gap `0.314`
+      - `model_400.pt`: command mean only `0.363`, not a fair speed-up, and lateral/pair metrics worsened
+      - `model_450.pt`, `model_best.pt`, `model_final.pt`: center/lateral/pair/gap worse; do not adopt.
+- Additional parameter tests after S3:
+  - `scale=12.1 + mild shield`:
+    - leader `0.351`, platoon `0.305`, speed_err `0.077`
+    - too little actual speed improvement; not useful as the high-speed answer.
+  - `scale=12.5 + catchup_action=-0.38 + guarded catchup_lateral_limit=0.16 + catchup_centerline_limit=0.18`:
+    - leader `0.365`, platoon `0.315`, speed_err `0.070`
+    - center worsened to `0.097`, center max peak `0.309`, pair_1 became worst; reject.
+  - `scale=12.5 + centerline_turn_gain=0.28 + lateral_turn_gain=0.30`:
+    - leader `0.365`, platoon `0.316`, speed_err `0.070`, center `0.082`
+    - close to the best setting, but gap `0.306` and pair_3/pair_4 still worse than baseline; not better than `lateral_turn_gain=0.32`.
+- Final current recommendation:
+  - Do not use any newly trained high-speed curriculum checkpoint.
+  - Use the original clean no-attack checkpoint:
+    - `logs/rsl_rl/platoon_happo/2026-06-23_22-37-20_platoon5_clean_noattack_v8_centerline_from150_ft200/model_final.pt`
+  - Use this parameter-only speed-up for play/testing:
+    - wheel scale `12.5`
+    - `env.safety_shield.lateral_turn_gain=0.32`
+    - `env.safety_shield.centerline_turn_gain=0.28`
+    - attack disabled
+  - This is not a strict every-metric improvement, but it is the best safe aggregate speed-up found:
+    - leader speed improves `0.352 -> 0.365`
+    - platoon speed improves `0.304 -> 0.316`
+    - speed error improves `0.078 -> 0.070`
+    - center mean/max/peak improve slightly
+    - lateral mean/max/peak improve slightly
+    - pair_1/pair_2 improve
+    - no bad-orientation resets and attack is off
+    - known tradeoff: gap `0.290 -> 0.302`, pair_3 `0.070 -> 0.086`, pair_4 `0.118 -> 0.122`
+  - Interpretation: the current policy is action-saturated; a strictly no-degradation high-speed controller likely requires architecture/reward changes beyond short curriculum fine-tuning.
+
+2026-06-24 note on whether longer high-speed training would help:
+
+- Extending the current S3-style high-speed fine-tune is not recommended as-is.
+- Evidence from S3:
+  - early checkpoint `model_350.pt` was already worse than the parameter-only speed-up on gap/pair metrics;
+  - later checkpoints (`model_450.pt`, `model_best.pt`, `model_final.pt`) further worsened centerline/lateral/gap instead of recovering;
+  - training had no bad-orientation resets, so the failure is not instability/OOM, but objective/action-distribution mismatch.
+- Main cause:
+  - the policy is frequently saturated near `happo_action_clip=0.4`;
+  - wheel scale `12.5` increases real speed by amplifying saturated actions, but it also amplifies steering and formation corrections;
+  - gap/catch-up rewards can improve speed/gap but push followers while they are still laterally correcting, which moves error into centerline peak and tail pairs.
+- Therefore more iterations under the same reward/shield/action setup are likely to overfit the speed/gap objective and degrade formation further.
+- A useful longer training run would need a redesigned curriculum, not just more iterations:
+  - gradual scale/speed schedule instead of jumping directly to high-speed scale;
+  - explicit anti-saturation/action-head regularization or a cleaner throttle-vs-turn control decomposition;
+  - stronger max-pair/tail-pair constraints while avoiding hard catch-up during lateral correction;
+  - deterministic eval after each stage and rollback to the best checkpoint.
+
+2026-06-24 high-speed redesign follow-up and adopted no-attack speed config:
+
+- New training/eval attempt:
+  - Ran `platoon5_highspeed_curriculum_v2_s1_scale122_tail_nogap` from the clean no-attack checkpoint.
+  - Eval directory:
+    - `logs/rsl_rl/platoon_happo/2026-06-24_14-32-13_platoon5_highspeed_curriculum_v2_s1_scale122_tail_nogap/eval_noattack_deploy_scale125_mild_1000`
+  - Result:
+    - `model_350.pt`: leader `0.365`, platoon `0.316`, speed_err `0.069`, center `0.084`, lateral `0.132`, gap `0.313`
+    - `model_400.pt`: center/lateral/gap worsened further
+    - `model_best.pt` and `model_final.pt`: center `0.088`, lateral `0.140`, gap `0.335`
+  - Conclusion: continuing high-speed policy training still degrades formation/gap; do not adopt this new checkpoint.
+- Added optional execution-layer controls for diagnostics:
+  - `env.safety_shield.forward_bias_gain`
+  - `env.safety_shield.forward_bias_clip`
+  - `env.safety_shield.forward_bias_speed_margin`
+  - `env.safety_shield.forward_bias_min_command`
+  - `env.safety_shield.forward_bias_min_gap`
+  - Defaults are disabled/no-op, so old behavior is preserved.
+  - Compile check passed after adding these and prior gap/tail controls.
+- Forward-bias tests were rejected as default:
+  - `scale=12.0`, `clip=0.45`, forward bias `0.60/0.045`:
+    - leader `0.395`, platoon `0.337`, speed_err `0.055`
+    - but center `0.119`, lateral `0.185`; too much formation degradation.
+  - softer forward bias:
+    - leader `0.369`, platoon `0.319`, speed_err `0.067`
+    - but center max peak `0.304`, lateral `0.146`; still too aggressive.
+  - leader-only forward bias did not solve the downstream lateral issue.
+- Scale scan without forward bias:
+  - `scale=12.2`: leader `0.355`, platoon `0.308`, lateral `0.130`; stable but too little speed gain.
+  - `scale=12.3`: leader `0.356`, platoon `0.310`; not enough speed gain.
+  - `scale=12.4`: leader `0.364`, platoon `0.314`; close, but not better than `scale=12.5`.
+- Tail-pair shield tuning:
+  - Reducing tail correction worked better than increasing it:
+    - `pair3_lateral_gain_scale=0.85`
+    - `pair4_lateral_gain_scale=0.90`
+  - With `scale=12.5`, mild shield, and no catch-up change:
+    - leader `0.365`, platoon `0.316`, speed_err `0.069`
+    - center `0.081`, lateral `0.132`, gap `0.305`
+    - pair_4 improves vs old 12.5 mild (`0.122 -> 0.119`)
+    - gap remains slightly worse.
+- Final adopted no-attack high-speed deployment config:
+  - Keep the clean checkpoint:
+    - `logs/rsl_rl/platoon_happo/2026-06-23_22-37-20_platoon5_clean_noattack_v8_centerline_from150_ft200/model_final.pt`
+  - Use overrides:
+    - `env.actions.joint_vel_*.scale=12.5`
+    - `env.safety_shield.lateral_turn_gain=0.32`
+    - `env.safety_shield.centerline_turn_gain=0.28`
+    - `env.safety_shield.pair3_lateral_gain_scale=0.85`
+    - `env.safety_shield.pair4_lateral_gain_scale=0.90`
+    - `env.safety_shield.catchup_action=-0.355`
+    - attack disabled
+  - Eval output:
+    - `eval_speedup_scale125_tailreduce_catchup355_cmd030_045_1000/eval_summary.csv`
+  - Result vs old `scale=12.5 + mild shield`:
+    - leader `0.365 -> 0.365`
+    - platoon `0.3159 -> 0.3166`
+    - speed_err `0.0697 -> 0.0690`
+    - center mean `0.0822 -> 0.0814`
+    - center max mean `0.1744 -> 0.1745` (essentially unchanged and still below 12.0 baseline `0.1802`)
+    - center peak `0.2425 -> 0.2514` (higher than old 12.5 mild but still below 12.0 baseline `0.2519`)
+    - lateral mean `0.1323 -> 0.1307`
+    - lateral peak `0.4124 -> 0.4049`
+    - gap `0.3023 -> 0.3015`
+    - pair_2 `0.1914 -> 0.1878`
+    - pair_4 `0.1221 -> 0.1206`
+    - bad reset `0`, attack `0`
+  - More aggressive alternatives:
+    - `catchup_action=-0.36`: better gap/lateral/speed, but center peak rises to `0.2540`; use only if visual play still looks good.
+    - `catchup_action=-0.37`: stronger average improvements, but center peak `0.2653`; not default.
+  - Current conclusion: do not continue high-speed training from the tested curriculum checkpoints. The best result so far is the clean checkpoint plus tuned high-speed execution/shield parameters above.
+
+2026-06-24 clarification on "high-speed retraining" vs current recommendation:
+
+- There is no intended contradiction:
+  - In principle, a truly better high-speed controller should be obtained by a redesigned high-speed curriculum, because the low-speed clean policy is action-saturated near `happo_action_clip=0.4`.
+  - In practice, the high-speed retraining attempts actually tested so far did not improve the controller; they worsened center/lateral/gap metrics in deterministic evaluation.
+- Therefore the current operational recommendation is:
+  - Do not continue the already-tested S1/S2/S3/v2 high-speed fine-tunes or simply extend their training time.
+  - Use the clean checkpoint plus tuned execution/shield parameters as the current best no-attack high-speed deployment config.
+- The future research recommendation is different:
+  - If retraining is attempted again, it should not be "same setup, more iterations".
+  - It needs a redesigned training setup: gradual speed/scale schedule, better throttle-vs-turn decomposition or anti-saturation regularization, max-pair/tail-pair constraints, and deterministic eval/rollback at each stage.
+- Short version:
+  - "High-speed retraining is likely needed for a fundamentally better controller" is the long-term diagnosis.
+  - "The high-speed retraining runs we tried are not usable" is the current experimental result.
+  - For now, use the clean model with the tuned high-speed parameters.
+
+2026-06-24 current best practical scheme:
+
+- Current best usable no-attack scheme is not a newly trained checkpoint.
+- Use the clean checkpoint:
+  - `logs/rsl_rl/platoon_happo/2026-06-23_22-37-20_platoon5_clean_noattack_v8_centerline_from150_ft200/model_final.pt`
+- Use tuned high-speed execution/shield overrides:
+  - attack off
+  - wheel scale `12.5`
+  - `happo_action_clip=0.4`
+  - `lateral_turn_gain=0.32`
+  - `centerline_turn_gain=0.28`
+  - `pair3_lateral_gain_scale=0.85`
+  - `pair4_lateral_gain_scale=0.90`
+  - `catchup_action=-0.355`
+  - command speed range `[0.30, 0.45]`
+- This is currently preferred over all newly trained high-speed curriculum checkpoints.
+
+2026-06-24 high-speed long fine-tune result and new best no-attack config:
+
+- Ran longer no-attack high-speed fine-tune:
+  - run: `logs/rsl_rl/platoon_happo/2026-06-24_17-58-29_platoon5_highspeed_bestcfg_ft_long_noattack`
+  - source checkpoint: `logs/rsl_rl/platoon_happo/2026-06-23_22-37-20_platoon5_clean_noattack_v8_centerline_from150_ft200/model_final.pt`
+  - training was stopped around iteration `734/1049` because post-700 training logs showed centerline/lateral degradation.
+- Deterministic eval of saved checkpoints under no-attack high-speed config showed:
+  - `model_650.pt`: platoon `0.3247`, speed_err `0.0620`, center `0.0816`, lateral `0.1174`, gap `0.3985`
+  - `model_700.pt`: platoon `0.3251`, speed_err `0.0631`, center `0.0825`, lateral `0.1065`, gap `0.4123`
+  - `model_best.pt` was not best for formation metrics.
+- Diagnosis:
+  - `model_700.pt` learned much better lateral/pair behavior, but default shield drop distance caused longitudinal gap compression/drift.
+  - Changing `env.safety_shield.d_drop` is the key fix.
+  - `d_drop=1.75` with weaker catch-up made the platoon too slow and gap too large.
+  - `d_drop=1.45` with `catchup_action=-0.355` balanced speed, gap, centerline, and lateral metrics.
+- New best no-attack high-speed result, 2000-step eval:
+  - checkpoint: `logs/rsl_rl/platoon_happo/2026-06-24_17-58-29_platoon5_highspeed_bestcfg_ft_long_noattack/model_700.pt`
+  - eval output: `logs/rsl_rl/platoon_happo/2026-06-24_17-58-29_platoon5_highspeed_bestcfg_ft_long_noattack/eval_model700_ddrop145_2000/eval_summary.csv`
+  - command speed `0.3807`
+  - leader speed `0.3625`
+  - platoon speed `0.3308`
+  - speed error `0.0607`
+  - centerline mean `0.0157`, max mean `0.0331`, peak `0.0647`
+  - lateral mean `0.0070`, max mean `0.0137`, peak `0.0317`
+  - gap mean `0.2112`
+  - heading mean `0.0051`, pair heading mean `0.0010`
+  - pair lateral means: `[0.0062, 0.0073, 0.0076, 0.0072]`
+  - bad-orientation reset `0`, attack `0`
+  - last 500 eval steps stayed stable: platoon `0.3320`, speed_err `0.0590`, center `0.0238`, lateral `0.0084`, gap `0.2486`, min pair gap `1.4989`.
+- Code default update:
+  - set `SafetyShieldCfg.d_drop=1.45` in `source/my_exts/marl_platoon/tasks/platoon/config.py`
+  - set fallback `BadHeadingShieldCfg.d_drop=1.45` in `source/my_exts/marl_platoon/algorithms/shield.py`
+  - compile check passed for `config.py`, `shield.py`, and `router.py`.
+- Current recommendation:
+  - Use `model_700.pt` from this run.
+  - Use no attack, speed range `[0.30, 0.45]`, wheel scale `12.5`, action clip `0.4`, lateral gain `0.32`, centerline gain `0.28`, pair3 scale `0.85`, pair4 scale `0.90`, catchup action `-0.355`, and `d_drop=1.45`.

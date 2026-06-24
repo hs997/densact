@@ -14,9 +14,11 @@ from marl_platoon.algorithms.pipeline import ShieldModule
 class BadHeadingShieldCfg:
     enabled: bool = False
     d_crit: float = 0.50
-    d_drop: float = 1.20
+    d_drop: float = 1.45
     brake_action: float = 0.0
     catchup_action: float = -0.35
+    catchup_lateral_limit: float = -1.0
+    catchup_centerline_limit: float = -1.0
     delta_v: float = 0.05
     lateral_tol: float = 0.035
     lateral_crit: float = 0.55
@@ -33,6 +35,17 @@ class BadHeadingShieldCfg:
     pair2_lateral_gain_scale: float = 1.0
     pair2_lateral_clip_scale: float = 1.0
     pair2_lateral_clip_max: float = 0.18
+    pair3_lateral_gain_scale: float = 1.0
+    pair3_lateral_clip_scale: float = 1.0
+    pair3_lateral_clip_max: float = 0.18
+    pair4_lateral_gain_scale: float = 1.0
+    pair4_lateral_clip_scale: float = 1.0
+    pair4_lateral_clip_max: float = 0.18
+    forward_bias_gain: float = 0.0
+    forward_bias_clip: float = 0.0
+    forward_bias_speed_margin: float = 0.02
+    forward_bias_min_command: float = 0.0
+    forward_bias_min_gap: float = 0.75
 
 
 class BadHeadingShieldModule(ShieldModule):
@@ -70,6 +83,9 @@ class BadHeadingShieldModule(ShieldModule):
         self.first_follower_centerline_count = 0
         self.first_follower_centerline_turn_abs_sum = 0.0
         self.first_follower_centerline_turn_samples = 0
+        self.forward_bias_count = 0
+        self.forward_bias_abs_sum = 0.0
+        self.forward_bias_samples = 0
 
     def _env_local_y(self, asset_name: str) -> torch.Tensor:
         pos_y = self.env.scene[asset_name].data.root_pos_w[:, 1]
@@ -117,6 +133,10 @@ class BadHeadingShieldModule(ShieldModule):
 
             brake_mask = gap <= self.cfg.d_crit
             catchup_mask = (gap >= self.cfg.d_drop) & (foll_v <= pred_v + self.cfg.delta_v) & (~brake_mask)
+            if self.cfg.catchup_lateral_limit > 0.0:
+                catchup_mask &= torch.abs(rel_local[:, 1]) <= float(self.cfg.catchup_lateral_limit)
+            if self.cfg.catchup_centerline_limit > 0.0:
+                catchup_mask &= torch.abs(self._env_local_y(foll_name)) <= float(self.cfg.catchup_centerline_limit)
 
             if brake_mask.any():
                 guarded[brake_mask, agent_id, :] = float(self.cfg.brake_action)
@@ -153,6 +173,12 @@ class BadHeadingShieldModule(ShieldModule):
                 if agent_id == 2:  # pair_2 follower: robot_3 relative to robot_2
                     turn_gain *= float(self.cfg.pair2_lateral_gain_scale)
                     turn_clip = min(float(self.cfg.pair2_lateral_clip_max), turn_clip * float(self.cfg.pair2_lateral_clip_scale))
+                if agent_id == 3:  # pair_3 follower: robot_4 relative to robot_3
+                    turn_gain *= float(self.cfg.pair3_lateral_gain_scale)
+                    turn_clip = min(float(self.cfg.pair3_lateral_clip_max), turn_clip * float(self.cfg.pair3_lateral_clip_scale))
+                if agent_id == 4:  # pair_4 follower: robot_5 relative to robot_4
+                    turn_gain *= float(self.cfg.pair4_lateral_gain_scale)
+                    turn_clip = min(float(self.cfg.pair4_lateral_clip_max), turn_clip * float(self.cfg.pair4_lateral_clip_scale))
                 turn_signal = turn_gain * lateral_signal
                 turn = torch.clamp(turn_signal, min=-turn_clip, max=turn_clip)
                 turn = torch.where(lateral_mask, turn, torch.zeros_like(turn))
@@ -204,6 +230,44 @@ class BadHeadingShieldModule(ShieldModule):
                 centerline_any |= centerline_mask
             warn_any |= centerline_any
 
+        if guarded.shape[-1] == 4 and self.cfg.forward_bias_gain > 0.0 and self.cfg.forward_bias_clip > 0.0:
+            try:
+                command_x = self.env.command_manager.get_command("base_velocity")[:, 0].to(
+                    device=self.env.device,
+                    dtype=guarded.dtype,
+                )
+            except Exception:
+                command_x = torch.zeros(num_envs, device=self.env.device, dtype=guarded.dtype)
+            command_mask = command_x >= float(self.cfg.forward_bias_min_command)
+            for agent_id in range(min(len(self.robots), guarded.shape[1])):
+                robot_name = self.robots[agent_id]
+                speed = self.env.scene[robot_name].data.root_lin_vel_b[:, 0].to(
+                    device=self.env.device,
+                    dtype=guarded.dtype,
+                )
+                speed_deficit = command_x - speed - float(self.cfg.forward_bias_speed_margin)
+                bias = torch.clamp(
+                    float(self.cfg.forward_bias_gain) * speed_deficit,
+                    min=0.0,
+                    max=float(self.cfg.forward_bias_clip),
+                )
+                bias_mask = command_mask & (bias > 0.0)
+                if agent_id > 0 and self.cfg.forward_bias_min_gap > 0.0:
+                    pred = self.env.scene[self.robots[agent_id - 1]]
+                    foll = self.env.scene[robot_name]
+                    rel_world = pred.data.root_pos_w - foll.data.root_pos_w
+                    rel_local = quat_apply_inverse(pred.data.root_quat_w, rel_world)
+                    bias_mask &= rel_local[:, 0].abs() >= float(self.cfg.forward_bias_min_gap)
+                if bias_mask.any():
+                    # Pre-adapter convention: equal negative semantic wheel commands
+                    # drive straight forward. Subtracting the same bias from all
+                    # wheels raises longitudinal authority without changing turn.
+                    guarded[bias_mask, agent_id, :] -= bias[bias_mask].unsqueeze(-1)
+                    sample_count = int(bias_mask.sum().item())
+                    self.forward_bias_count += sample_count
+                    self.forward_bias_abs_sum += float(bias[bias_mask].abs().sum().item())
+                    self.forward_bias_samples += sample_count
+
         warn_n = int(warn_any.sum().item())
         critical_n = int(critical_any.sum().item())
         total_n = int(num_envs)
@@ -223,6 +287,7 @@ class BadHeadingShieldModule(ShieldModule):
         lateral_turn_samples = max(self.lateral_turn_samples, 1)
         all_centerline_turn_samples = max(self.centerline_turn_samples, 1)
         first_centerline_turn_samples = max(self.first_follower_centerline_turn_samples, 1)
+        forward_bias_samples = max(self.forward_bias_samples, 1)
         return {
             "shield_warn_rate": float(self.warn_count / samples),
             "shield_critical_rate": float(self.critical_count / samples),
@@ -237,4 +302,6 @@ class BadHeadingShieldModule(ShieldModule):
             "shield_first_follower_centerline_turn_mean": float(
                 self.first_follower_centerline_turn_abs_sum / first_centerline_turn_samples
             ),
+            "shield_forward_bias_rate": float(self.forward_bias_count / samples),
+            "shield_forward_bias_mean": float(self.forward_bias_abs_sum / forward_bias_samples),
         }

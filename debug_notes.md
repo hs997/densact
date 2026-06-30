@@ -5999,3 +5999,6 @@ Tell Codex:
   - generated fixed-medium comparison figures: `fig_01_fixed_medium_episode_return.png`, `fig_02_fixed_medium_eval_metrics.png`, `fig_03_fixed_medium_final_bars.png`
   - all three eval summaries show `attack_enabled=1`, `attack_max_fdi_acc=0.5`, `attack_max_dos_rate=0.1`, and nonzero `episode_return_mean`.
 - Added a final plotting fix so `model_final.pt` is placed at the true `MAX_ITERATIONS` coordinate rather than reusing the last selected intermediate checkpoint coordinate.
+- The fixed-medium comparison pipeline code was committed and pushed:
+  - branch `freeze/cagan-step3-dualchannel-logging`
+  - commit `888bcf9 Add fixed-medium MAPPO HAPPO comparison pipeline`

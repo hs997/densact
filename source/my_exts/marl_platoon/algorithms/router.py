@@ -303,9 +303,9 @@ class PlatoonAlgorithmRouter:
         attack_level = str(getattr(self.cfg, "attack_level", "off")).lower()
         attack_presets = {
             "off": {"enabled": False, "max_fdi_pos": 0.0, "max_fdi_acc": 0.0, "max_dos_rate": 0.0},
-            "light": {"enabled": True, "max_fdi_pos": 1.0, "max_fdi_acc": 0.10, "max_dos_rate": 0.02},
-            "easy": {"enabled": True, "max_fdi_pos": 2.0, "max_fdi_acc": 0.5, "max_dos_rate": 0.05},
-            "medium": {"enabled": True, "max_fdi_pos": 5.0, "max_fdi_acc": 1.5, "max_dos_rate": 0.15},
+            "light": {"enabled": True, "max_fdi_pos": 0.75, "max_fdi_acc": 0.10, "max_dos_rate": 0.02},
+            "easy": {"enabled": True, "max_fdi_pos": 1.25, "max_fdi_acc": 0.25, "max_dos_rate": 0.05},
+            "medium": {"enabled": True, "max_fdi_pos": 2.0, "max_fdi_acc": 0.50, "max_dos_rate": 0.10},
             "hard": {"enabled": True, "max_fdi_pos": 8.0, "max_fdi_acc": 3.0, "max_dos_rate": 0.30},
         }
         if attack_level not in attack_presets:

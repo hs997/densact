@@ -7,10 +7,10 @@ from isaaclab.managers import SceneEntityCfg, RewardTermCfg, ObservationTermCfg,
 import isaaclab.envs.mdp as mdp
 # 引入长方体、材质、刚体属性配置
 from isaaclab.sim import DomeLightCfg, UrdfFileCfg, UsdFileCfg, SimulationCfg, PhysxCfg, \
-    CuboidCfg, PreviewSurfaceCfg, RigidBodyMaterialCfg, RigidBodyPropertiesCfg
+    CuboidCfg, CylinderCfg, PreviewSurfaceCfg, MdlFileCfg, RigidBodyMaterialCfg, RigidBodyPropertiesCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.terrains import TerrainImporterCfg
+from isaaclab.terrains import MeshPlaneTerrainCfg, TerrainGeneratorCfg, TerrainImporterCfg
 # 注意：新版 IsaacLab 中 quat_rotate 可能被弃用，建议用 quat_apply 或 quat_rotate_inverse
 from isaaclab.utils.math import quat_apply_inverse, quat_apply
 
@@ -19,6 +19,41 @@ from isaaclab.utils.math import quat_apply_inverse, quat_apply
 # =============================================================================
 USER_URDF_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/Melodic_wheeltec_robot_src_250707/src/turn_on_wheeltec_robot/urdf/senior_4wd_bs_robot.urdf"
 HIGHWAY_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/highway_straight/highway_straight.usda"
+CITY_SHOP_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_straight/building_shop.usda"
+CITY_OFFICE_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_straight/building_office_low.usda"
+CITY_APARTMENT_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_straight/building_apartment.usda"
+CITY_REAL_BUILDING_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_realistic/usd/Launch_Building_Coon_Building.usd"
+CITY_REAL_FACADE_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_realistic/usd/Launch_Building_Coon_Exterior_Joint1_001.usd"
+CITY_REAL_STATION_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_realistic/usd/Tower_Station_01_Art.usd"
+CITY_PH_URBAN_FACADE_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_realistic/polyhaven/usd/modular_urban_apartments_facade_1k.usd"
+CITY_PH_FACTORY_FACADE_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_realistic/polyhaven/usd/modular_factory_facade_1k.usd"
+CITY_SOURCECITY_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_complete/sourcecity_usda_fixed/Main_Intersection_v2.usda"
+CITY_NVIDIA_DEMO_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_complete/nvidia_city_demo_pack/Demos/AEC/TowerDemo/CityDemopack/Assemblies/assembly_City.usd"
+CITY_SHORT_ASPHALT_ROAD_USD_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_realistic/road/short_asphalt_road.usda"
+CITY_NVIDIA_ASPHALT_MDL_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_complete/nvidia_city_demo_pack/Demos/AEC/TowerDemo/CityDemopack/Source/context_City/rh_Context_City/Materials/Asphalt/Asphalt.mdl"
+CITY_NVIDIA_CONCRETE_MDL_PATH = "/home/cnc/SSD_1T/xzw/IsaacLab-main/assets/city_complete/nvidia_city_demo_pack/Demos/AEC/TowerDemo/CityDemopack/Source/context_City/rh_Context_City/Materials/Concrete_SmoothPanels_uk2iadmew.mdl"
+CITY_BUILDING_NORTH_ROT = (1.0, 0.0, 0.0, 0.0)
+CITY_BUILDING_SOUTH_ROT = (0.0, 0.0, 0.0, 1.0)
+CITY_REAL_NORTH_ROT = (0.7071068, 0.7071068, 0.0, 0.0)
+CITY_REAL_SOUTH_ROT = (0.7071068, -0.7071068, 0.0, 0.0)
+CITY_FACADE_NORTH_ROT = (0.7071068, 0.7071068, 0.0, 0.0)
+CITY_FACADE_SOUTH_ROT = (0.7071068, -0.7071068, 0.0, 0.0)
+CITY_NEAR_BUILDING_SCALE = (1.18, 1.18, 1.18)
+CITY_BACK_BUILDING_SCALE = (0.82, 0.82, 0.82)
+CITY_REAL_BUILDING_SCALE = (0.030, 0.030, 0.030)
+CITY_REAL_STATION_SCALE = (0.012, 0.012, 0.012)
+CITY_URBAN_STREET_FACADE_SCALE = (0.170, 0.315, 0.052)
+CITY_FACTORY_STREET_FACADE_SCALE = (0.158, 0.250, 0.052)
+CITY_URBAN_BACK_FACADE_SCALE = (0.145, 0.270, 0.045)
+CITY_FACTORY_BACK_FACADE_SCALE = (0.135, 0.220, 0.045)
+CITY_STREET_FACADE_Z = -20.0
+CITY_BACK_FACADE_Z = -20.0
+CITY_SOURCECITY_SCALE = (0.045, 0.045, 0.045)
+CITY_NVIDIA_DEMO_SCALE = (0.0045, 0.0045, 0.0045)
+CITY_NVIDIA_DEMO_ROT_Z90 = (0.7071068, 0.0, 0.0, 0.7071068)
+CITY_LANE_CENTER_Y = 0.0
+CITY_OTHER_LANE_CENTER_Y = -1.20
+CITY_LANE_DIVIDER_Y = -0.60
 TARGET_SPEED_RANGE = (0.6, 0.8)
 WHEEL_ACTION_SCALE = 12.0
 WHEEL_VELOCITY_LIMIT = 20.0
@@ -68,6 +103,97 @@ def _env_local_y(env, asset_name: str):
     if env_origins is not None:
         pos_y = pos_y - env_origins[:, 1].to(device=pos_y.device, dtype=pos_y.dtype)
     return pos_y
+
+
+def _city_box(
+    name: str,
+    pos: tuple[float, float, float],
+    size: tuple[float, float, float],
+    color: tuple[float, float, float],
+    *,
+    metallic: float = 0.0,
+    roughness: float = 0.75,
+    emissive: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> AssetBaseCfg:
+    return AssetBaseCfg(
+        prim_path=f"/World/CityScenery/{name}",
+        spawn=CuboidCfg(
+            size=size,
+            visual_material=PreviewSurfaceCfg(
+                diffuse_color=color,
+                emissive_color=emissive,
+                metallic=metallic,
+                roughness=roughness,
+            ),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=pos),
+    )
+
+
+def _city_box_mdl(
+    name: str,
+    pos: tuple[float, float, float],
+    size: tuple[float, float, float],
+    mdl_path: str,
+    *,
+    texture_scale: tuple[float, float] | None = None,
+    albedo_brightness: float | None = None,
+) -> AssetBaseCfg:
+    return AssetBaseCfg(
+        prim_path=f"/World/CityScenery/{name}",
+        spawn=CuboidCfg(
+            size=size,
+            visual_material=MdlFileCfg(
+                mdl_path=mdl_path,
+                project_uvw=True,
+                texture_scale=texture_scale,
+                albedo_brightness=albedo_brightness,
+            ),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=pos),
+    )
+
+
+def _city_cylinder(
+    name: str,
+    pos: tuple[float, float, float],
+    radius: float,
+    height: float,
+    color: tuple[float, float, float],
+    *,
+    metallic: float = 0.0,
+    roughness: float = 0.55,
+    emissive: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> AssetBaseCfg:
+    return AssetBaseCfg(
+        prim_path=f"/World/CityScenery/{name}",
+        spawn=CylinderCfg(
+            radius=radius,
+            height=height,
+            visual_material=PreviewSurfaceCfg(
+                diffuse_color=color,
+                emissive_color=emissive,
+                metallic=metallic,
+                roughness=roughness,
+            ),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=pos),
+    )
+
+
+def _city_usd(
+    name: str,
+    usd_path: str,
+    pos: tuple[float, float, float],
+    *,
+    scale: tuple[float, float, float] = (1.0, 1.0, 1.0),
+    rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
+) -> AssetBaseCfg:
+    return AssetBaseCfg(
+        prim_path=f"/World/CityScenery/{name}",
+        spawn=UsdFileCfg(usd_path=usd_path, scale=scale),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=pos, rot=rot),
+    )
 
 
 # =============================================================================
@@ -514,61 +640,83 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
 
     @configclass
     class SceneCfg(InteractiveSceneCfg):
-        # --- Robot 1 (领航车): 旗舰深蓝 ---
+        # --- Robot 1 (领航车): 深海蓝 ---
         robot = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_1")
-        robot.init_state.pos = (1.0, 0.0, 0.5)
+        robot.init_state.pos = (-8.75, 0.0, 0.80)
         robot.spawn.visual_material = PreviewSurfaceCfg(
-            diffuse_color=(0.0, 0.15, 0.4),  # 深蓝
-            metallic=0.6, roughness=0.3  # 加一点金属反光感
+            diffuse_color=(0.02, 0.10, 0.42),
+            metallic=0.55, roughness=0.28
         )
 
-        # --- Robot 2 (跟随车): 石墨灰，原 Robot 3 顺移 ---
+        # --- Robot 2 (跟随车): 珍珠白，原 Robot 3 顺移 ---
         robot_2 = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_2")
-        robot_2.init_state.pos = (-0.5, 0.0, 0.5)
+        robot_2.init_state.pos = (-10.25, 0.0, 0.80)
         robot_2.spawn.visual_material = PreviewSurfaceCfg(
-            diffuse_color=(0.18, 0.20, 0.22),
-            metallic=0.45, roughness=0.38
+            diffuse_color=(0.86, 0.86, 0.80),
+            metallic=0.18, roughness=0.32
         )
 
-        # --- Robot 3 (跟随车): 波尔多红，原 Robot 4 顺移 ---
+        # --- Robot 3 (跟随车): 标准红，原 Robot 4 顺移 ---
         robot_3 = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_3")
-        robot_3.init_state.pos = (-2.0, 0.0, 0.5)
+        robot_3.init_state.pos = (-11.75, 0.0, 0.80)
         robot_3.spawn.visual_material = PreviewSurfaceCfg(
-            diffuse_color=(0.4, 0.05, 0.05),  # 暗红
-            metallic=0.5, roughness=0.4
+            diffuse_color=(0.62, 0.03, 0.025),
+            metallic=0.42, roughness=0.30
         )
 
-        # --- Robot 4 (跟随车): 青绿色，原 Robot 5 顺移 ---
+        # --- Robot 4 (跟随车): 金属银，原 Robot 5 顺移 ---
         robot_4 = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_4")
-        robot_4.init_state.pos = (-3.5, 0.0, 0.5)
+        robot_4.init_state.pos = (-13.25, 0.0, 0.80)
         robot_4.spawn.visual_material = PreviewSurfaceCfg(
-            diffuse_color=(0.0, 0.35, 0.28),
-            metallic=0.4, roughness=0.35
+            diffuse_color=(0.58, 0.61, 0.62),
+            metallic=0.65, roughness=0.24
         )
 
-        # --- Robot 5 (跟随车): 深紫色，原 Robot 6 顺移 ---
+        # --- Robot 5 (跟随车): 石墨黑，原 Robot 6 顺移 ---
         robot_5 = MY_CAR_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot_5")
-        robot_5.init_state.pos = (-5.0, 0.0, 0.5)
+        robot_5.init_state.pos = (-14.75, 0.0, 0.80)
         robot_5.spawn.visual_material = PreviewSurfaceCfg(
-            diffuse_color=(0.22, 0.08, 0.35),
-            metallic=0.4, roughness=0.35
+            diffuse_color=(0.035, 0.040, 0.045),
+            metallic=0.55, roughness=0.30
         )
 
-        # 2. 地形配置 (无限平面基底)
-        terrain = TerrainImporterCfg(prim_path="/World/ground", terrain_type="plane")
+        # 2. 地形配置 (本地程序化平面，避免阶段切换时依赖远程 Omniverse grid USD)
+        terrain = TerrainImporterCfg(
+            prim_path="/World/ground",
+            terrain_type="generator",
+            terrain_generator=TerrainGeneratorCfg(
+                size=(2000.0, 2000.0),
+                num_rows=1,
+                num_cols=1,
+                border_width=0.0,
+                color_scheme="none",
+                use_cache=False,
+                sub_terrains={
+                    "flat": MeshPlaneTerrainCfg(proportion=1.0),
+                },
+            ),
+            use_terrain_origins=False,
+            visual_material=PreviewSurfaceCfg(diffuse_color=(0.92, 0.92, 0.89), roughness=0.86),
+            physics_material=RigidBodyMaterialCfg(
+                static_friction=1.2,
+                dynamic_friction=1.0,
+                restitution=0.0,
+            ),
+        )
 
         # 3. 高速公路视觉资产
         highway_scene = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/HighwayScene",
             spawn=UsdFileCfg(usd_path=HIGHWAY_USD_PATH),
-            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.012))
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -20.0))
         )
 
         # 4. 高速公路物理路面
         highway_collision = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/HighwayCollision",
             spawn=CuboidCfg(
-                size=(2000.0, 3.0, 0.1),
+                visible=False,
+                size=(2000.0, 2.95, 0.1),
                 visual_material=PreviewSurfaceCfg(diffuse_color=(0.028, 0.031, 0.034)),
                 physics_material=RigidBodyMaterialCfg(
                     static_friction=1.2,
@@ -580,18 +728,158 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
                     disable_gravity=True
                 )
             ),
-            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.05))
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, -0.55, 0.082))
         )
 
-        light = AssetBaseCfg(prim_path="/World/light", spawn=DomeLightCfg(intensity=3000.0))
+        # Global visual-only city dressing for single-env play/rendering.
+        # y=0 is intentionally the near-building lane center used by the policy.
+        city_full_map = _city_usd(
+            "nvidia_city_demo",
+            CITY_NVIDIA_DEMO_USD_PATH,
+            (10.0, -33.0, -0.12),
+            scale=CITY_NVIDIA_DEMO_SCALE,
+            rot=CITY_NVIDIA_DEMO_ROT_Z90,
+        )
+        city_road_asphalt = _city_usd("two_lane_asphalt", CITY_SHORT_ASPHALT_ROAD_USD_PATH, (2.0, -0.54, 0.010))
+        city_road_near_lane = _city_box("near_lane_subtle_wear", (0.0, CITY_LANE_CENTER_Y, -20.0), (1.0, 1.0, 0.006), (0.042, 0.045, 0.047), roughness=0.96)
+        city_road_far_lane = _city_box("far_lane_subtle_wear", (0.0, CITY_OTHER_LANE_CENTER_Y, -20.0), (1.0, 1.0, 0.006), (0.036, 0.038, 0.040), roughness=0.96)
+        city_curb_near = _city_box_mdl("curb_near_buildings", (2.0, 0.66, 0.050), (52.0, 0.080, 0.026), CITY_NVIDIA_CONCRETE_MDL_PATH, texture_scale=(0.45, 0.45), albedo_brightness=0.72)
+        city_curb_far = _city_box_mdl("curb_far_side", (2.0, -1.93, 0.050), (52.0, 0.070, 0.022), CITY_NVIDIA_CONCRETE_MDL_PATH, texture_scale=(0.45, 0.45), albedo_brightness=0.65)
+        city_sidewalk_near = _city_box_mdl("sidewalk_near_buildings", (2.0, 0.98, 0.044), (52.0, 0.62, 0.012), CITY_NVIDIA_CONCRETE_MDL_PATH, texture_scale=(0.35, 0.35), albedo_brightness=0.60)
+        city_near_edge_paving = _city_box("near_edge_paving", (2.0, 0.50, 0.096), (52.0, 0.34, 0.012), (0.78, 0.78, 0.74), roughness=0.88)
+        city_sidewalk_far = _city_box("sidewalk_far_side", (2.0, -3.05, 0.042), (52.0, 2.05, 0.010), (0.86, 0.86, 0.83), roughness=0.88)
+        city_far_edge_paving = _city_box("far_edge_paving", (2.0, -2.12, 0.094), (52.0, 0.78, 0.012), (0.90, 0.90, 0.87), roughness=0.88)
+        city_clean_outer_ground = _city_box("clean_outer_ground", (2.0, -6.25, 0.034), (52.0, 4.30, 0.010), (0.90, 0.90, 0.87), roughness=0.88)
+        city_urban_forecourt = _city_box_mdl("urban_forecourt", (2.0, 2.70, 0.043), (52.0, 3.15, 0.012), CITY_NVIDIA_CONCRETE_MDL_PATH, texture_scale=(0.28, 0.28), albedo_brightness=0.55)
+        city_urban_forecourt_strip_01 = _city_box("urban_forecourt_strip_01", (2.0, 1.30, 0.052), (52.0, 0.036, 0.006), (0.40, 0.41, 0.40), roughness=0.90)
+        city_urban_forecourt_strip_02 = _city_box("urban_forecourt_strip_02", (2.0, 4.15, 0.052), (52.0, 0.036, 0.006), (0.32, 0.33, 0.33), roughness=0.90)
+        city_edge_line_near = _city_box("edge_line_near", (2.0, 0.47, 0.016), (52.0, 0.026, 0.003), (0.82, 0.82, 0.76))
+        city_edge_line_far = _city_box("edge_line_far", (2.0, -1.72, 0.016), (52.0, 0.026, 0.003), (0.82, 0.82, 0.76))
+
+        city_intersection_west = _city_box("intersection_west_asphalt", (-62.0, -0.60, 0.052), (4.40, 5.30, 0.008), (0.026, 0.028, 0.030), roughness=0.94)
+        city_intersection_mid = _city_box("intersection_mid_asphalt", (-12.0, -0.60, -20.0), (4.00, 5.30, 0.008), (0.026, 0.028, 0.030), roughness=0.94)
+        city_intersection_east = _city_box("intersection_east_asphalt", (58.0, -0.60, 0.052), (4.40, 5.30, 0.008), (0.026, 0.028, 0.030), roughness=0.94)
+        city_stop_bar_west_near = _city_box("stop_bar_west_near_lane", (-59.55, CITY_LANE_CENTER_Y, 0.070), (0.12, 0.86, 0.010), (0.88, 0.88, 0.82))
+        city_stop_bar_west_far = _city_box("stop_bar_west_far_lane", (-59.55, CITY_OTHER_LANE_CENTER_Y, 0.070), (0.12, 0.86, 0.010), (0.88, 0.88, 0.82))
+        city_crosswalk_mid_01 = _city_box("crosswalk_mid_01", (-12.75, -0.60, -20.0), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+        city_crosswalk_mid_02 = _city_box("crosswalk_mid_02", (-12.30, -0.60, -20.0), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+        city_crosswalk_mid_03 = _city_box("crosswalk_mid_03", (-11.85, -0.60, -20.0), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+        city_crosswalk_mid_04 = _city_box("crosswalk_mid_04", (-11.40, -0.60, -20.0), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+        city_stop_bar_mid_near = _city_box("stop_bar_mid_near_lane", (-9.60, CITY_LANE_CENTER_Y, -20.0), (0.12, 0.86, 0.010), (0.88, 0.88, 0.82))
+        city_stop_bar_mid_far = _city_box("stop_bar_mid_far_lane", (-9.60, CITY_OTHER_LANE_CENTER_Y, -20.0), (0.12, 0.86, 0.010), (0.88, 0.88, 0.82))
+        city_stop_bar_east_near = _city_box("stop_bar_east_near_lane", (55.55, CITY_LANE_CENTER_Y, 0.070), (0.12, 0.86, 0.010), (0.88, 0.88, 0.82))
+        city_stop_bar_east_far = _city_box("stop_bar_east_far_lane", (55.55, CITY_OTHER_LANE_CENTER_Y, 0.070), (0.12, 0.86, 0.010), (0.88, 0.88, 0.82))
+
+        city_lane_dash_01 = _city_box("lane_divider_dash_01", (-54.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_02 = _city_box("lane_divider_dash_02", (-45.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_03 = _city_box("lane_divider_dash_03", (-36.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_04 = _city_box("lane_divider_dash_04", (-27.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_05 = _city_box("lane_divider_dash_05", (-18.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_06 = _city_box("lane_divider_dash_06", (-9.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_07 = _city_box("lane_divider_dash_07", (0.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_08 = _city_box("lane_divider_dash_08", (9.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_09 = _city_box("lane_divider_dash_09", (18.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_10 = _city_box("lane_divider_dash_10", (27.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_11 = _city_box("lane_divider_dash_11", (36.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_12 = _city_box("lane_divider_dash_12", (45.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+        city_lane_dash_13 = _city_box("lane_divider_dash_13", (54.0, CITY_LANE_DIVIDER_Y, 0.016), (1.45, 0.038, 0.003), (0.86, 0.65, 0.16))
+
+        city_crosswalk_a01 = _city_box("crosswalk_a01", (-62.0, -0.60, 0.068), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+        city_crosswalk_a02 = _city_box("crosswalk_a02", (-61.55, -0.60, 0.068), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+        city_crosswalk_a03 = _city_box("crosswalk_a03", (-61.10, -0.60, 0.068), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+        city_crosswalk_b01 = _city_box("crosswalk_b01", (58.0, -0.60, 0.068), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+        city_crosswalk_b02 = _city_box("crosswalk_b02", (58.45, -0.60, 0.068), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+        city_crosswalk_b03 = _city_box("crosswalk_b03", (58.90, -0.60, 0.068), (0.16, 2.10, 0.010), (0.86, 0.86, 0.80))
+
+        city_block_body_n01 = _city_box("city_block_body_n01", (-151.0, 3.02, 1.34), (7.2, 1.18, 2.68), (0.55, 0.50, 0.44), roughness=0.84)
+        city_block_body_n02 = _city_box("city_block_body_n02", (-139.0, 3.10, 1.56), (8.4, 1.30, 3.12), (0.36, 0.39, 0.42), roughness=0.80)
+        city_block_body_n03 = _city_box("city_block_body_n03", (-126.5, 3.06, 1.48), (7.6, 1.22, 2.96), (0.48, 0.43, 0.39), roughness=0.86)
+        city_block_body_n04 = _city_box("city_block_body_n04", (70.0, 3.42, 1.26), (6.8, 1.16, 2.52), (0.42, 0.44, 0.40), roughness=0.82)
+        city_block_body_n05 = _city_box("city_block_body_n05", (83.0, 3.52, 1.68), (8.6, 1.34, 3.36), (0.32, 0.36, 0.40), roughness=0.78)
+        city_block_body_n06 = _city_box("city_block_body_n06", (96.0, 3.04, 1.44), (7.4, 1.20, 2.88), (0.52, 0.46, 0.40), roughness=0.84)
+        city_block_body_n07 = _city_box("city_block_body_n07", (110.0, 3.02, 1.30), (7.2, 1.18, 2.60), (0.40, 0.42, 0.39), roughness=0.82)
+        city_block_body_n08 = _city_box("city_block_body_n08", (123.0, 3.10, 1.60), (8.2, 1.30, 3.20), (0.34, 0.38, 0.42), roughness=0.80)
+        city_block_body_n09 = _city_box("city_block_body_n09", (136.0, 3.06, 1.48), (7.6, 1.22, 2.96), (0.54, 0.48, 0.42), roughness=0.84)
+        city_block_roof_n01 = _city_box("city_block_roof_n01", (-151.0, 3.02, 2.72), (7.6, 1.34, 0.12), (0.16, 0.17, 0.17), metallic=0.04, roughness=0.70)
+        city_block_roof_n02 = _city_box("city_block_roof_n02", (-139.0, 3.10, 3.17), (8.8, 1.46, 0.12), (0.13, 0.14, 0.15), metallic=0.04, roughness=0.70)
+        city_block_roof_n03 = _city_box("city_block_roof_n03", (-126.5, 3.06, 3.00), (8.0, 1.38, 0.12), (0.17, 0.15, 0.14), metallic=0.04, roughness=0.70)
+        city_block_roof_n04 = _city_box("city_block_roof_n04", (70.0, 3.42, 2.58), (7.2, 1.32, 0.12), (0.14, 0.15, 0.15), metallic=0.04, roughness=0.70)
+        city_block_roof_n05 = _city_box("city_block_roof_n05", (83.0, 3.52, 3.41), (9.0, 1.50, 0.12), (0.12, 0.13, 0.14), metallic=0.04, roughness=0.70)
+        city_block_roof_n06 = _city_box("city_block_roof_n06", (96.0, 3.04, 2.92), (7.8, 1.36, 0.12), (0.18, 0.16, 0.14), metallic=0.04, roughness=0.70)
+        city_block_roof_n07 = _city_box("city_block_roof_n07", (110.0, 3.02, 2.64), (7.6, 1.34, 0.12), (0.14, 0.15, 0.14), metallic=0.04, roughness=0.70)
+        city_block_roof_n08 = _city_box("city_block_roof_n08", (123.0, 3.10, 3.24), (8.6, 1.46, 0.12), (0.12, 0.14, 0.16), metallic=0.04, roughness=0.70)
+        city_block_roof_n09 = _city_box("city_block_roof_n09", (136.0, 3.06, 3.00), (8.0, 1.38, 0.12), (0.18, 0.16, 0.14), metallic=0.04, roughness=0.70)
+        city_block_base_n01 = _city_box("city_block_base_n01", (-151.0, 2.32, 0.20), (7.4, 0.20, 0.40), (0.22, 0.22, 0.21), roughness=0.82)
+        city_block_base_n02 = _city_box("city_block_base_n02", (-139.0, 2.34, 0.22), (8.4, 0.20, 0.44), (0.20, 0.21, 0.22), roughness=0.82)
+        city_block_base_n03 = _city_box("city_block_base_n03", (-126.5, 2.32, 0.20), (7.7, 0.20, 0.40), (0.23, 0.22, 0.20), roughness=0.82)
+        city_block_base_n04 = _city_box("city_block_base_n04", (70.0, 2.72, 0.18), (6.9, 0.20, 0.36), (0.20, 0.22, 0.20), roughness=0.82)
+        city_block_base_n05 = _city_box("city_block_base_n05", (83.0, 2.74, 0.22), (8.6, 0.20, 0.44), (0.18, 0.20, 0.22), roughness=0.82)
+        city_block_base_n06 = _city_box("city_block_base_n06", (96.0, 2.32, 0.20), (7.5, 0.20, 0.40), (0.22, 0.21, 0.19), roughness=0.82)
+        city_block_base_n07 = _city_box("city_block_base_n07", (110.0, 2.32, 0.18), (7.2, 0.20, 0.36), (0.20, 0.22, 0.20), roughness=0.82)
+        city_block_base_n08 = _city_box("city_block_base_n08", (123.0, 2.34, 0.22), (8.3, 0.20, 0.44), (0.18, 0.20, 0.22), roughness=0.82)
+        city_block_base_n09 = _city_box("city_block_base_n09", (136.0, 2.32, 0.20), (7.7, 0.20, 0.40), (0.22, 0.21, 0.19), roughness=0.82)
+
+        city_facade_n01 = _city_usd("urban_facade_n01", CITY_PH_URBAN_FACADE_USD_PATH, (-51.0, 2.20, CITY_STREET_FACADE_Z), scale=CITY_URBAN_STREET_FACADE_SCALE, rot=CITY_FACADE_NORTH_ROT)
+        city_facade_n02 = _city_usd("factory_facade_n02", CITY_PH_FACTORY_FACADE_USD_PATH, (-39.0, 2.20, CITY_STREET_FACADE_Z), scale=CITY_FACTORY_STREET_FACADE_SCALE, rot=CITY_FACADE_NORTH_ROT)
+        city_facade_n03 = _city_usd("urban_facade_n03", CITY_PH_URBAN_FACADE_USD_PATH, (-26.5, 2.20, CITY_STREET_FACADE_Z), scale=CITY_URBAN_STREET_FACADE_SCALE, rot=CITY_FACADE_NORTH_ROT)
+        city_facade_n04 = _city_usd("factory_facade_n04", CITY_PH_FACTORY_FACADE_USD_PATH, (70.0, 2.60, CITY_STREET_FACADE_Z), scale=CITY_FACTORY_STREET_FACADE_SCALE, rot=CITY_FACADE_NORTH_ROT)
+        city_facade_n05 = _city_usd("urban_facade_n05", CITY_PH_URBAN_FACADE_USD_PATH, (83.0, 2.60, CITY_STREET_FACADE_Z), scale=CITY_URBAN_STREET_FACADE_SCALE, rot=CITY_FACADE_NORTH_ROT)
+        city_facade_n06 = _city_usd("factory_facade_n06", CITY_PH_FACTORY_FACADE_USD_PATH, (96.0, 2.20, CITY_STREET_FACADE_Z), scale=CITY_FACTORY_STREET_FACADE_SCALE, rot=CITY_FACADE_NORTH_ROT)
+        city_facade_n07 = _city_usd("urban_facade_n07", CITY_PH_URBAN_FACADE_USD_PATH, (24.0, 2.20, CITY_STREET_FACADE_Z), scale=CITY_URBAN_STREET_FACADE_SCALE, rot=CITY_FACADE_NORTH_ROT)
+        city_facade_n08 = _city_usd("factory_facade_n08", CITY_PH_FACTORY_FACADE_USD_PATH, (37.0, 2.20, CITY_STREET_FACADE_Z), scale=CITY_FACTORY_STREET_FACADE_SCALE, rot=CITY_FACADE_NORTH_ROT)
+        city_facade_n09 = _city_usd("urban_facade_n09", CITY_PH_URBAN_FACADE_USD_PATH, (50.0, 2.20, CITY_STREET_FACADE_Z), scale=CITY_URBAN_STREET_FACADE_SCALE, rot=CITY_FACADE_NORTH_ROT)
+
+        city_block_body_s01 = _city_box("city_block_body_s01", (-143.0, -4.20, 1.05), (7.0, 1.00, 2.10), (0.47, 0.42, 0.38), roughness=0.86)
+        city_block_body_s02 = _city_box("city_block_body_s02", (-122.0, -4.28, 1.20), (7.8, 1.08, 2.40), (0.34, 0.38, 0.42), roughness=0.82)
+        city_block_body_s03 = _city_box("city_block_body_s03", (100.0, -4.20, 1.00), (6.8, 1.00, 2.00), (0.52, 0.46, 0.40), roughness=0.86)
+        city_block_body_s04 = _city_box("city_block_body_s04", (123.0, -4.28, 1.18), (7.6, 1.08, 2.36), (0.36, 0.39, 0.42), roughness=0.82)
+        city_block_body_s05 = _city_box("city_block_body_s05", (147.0, -4.20, 1.05), (7.0, 1.00, 2.10), (0.49, 0.44, 0.38), roughness=0.86)
+        city_facade_s01 = _city_usd("urban_facade_s01", CITY_PH_URBAN_FACADE_USD_PATH, (-43.0, -3.62, CITY_BACK_FACADE_Z), scale=CITY_URBAN_BACK_FACADE_SCALE, rot=CITY_FACADE_SOUTH_ROT)
+        city_facade_s02 = _city_usd("factory_facade_s02", CITY_PH_FACTORY_FACADE_USD_PATH, (-22.0, -3.62, CITY_BACK_FACADE_Z), scale=CITY_FACTORY_BACK_FACADE_SCALE, rot=CITY_FACADE_SOUTH_ROT)
+        city_facade_s03 = _city_usd("urban_facade_s03", CITY_PH_URBAN_FACADE_USD_PATH, (0.0, -3.62, CITY_BACK_FACADE_Z), scale=CITY_URBAN_BACK_FACADE_SCALE, rot=CITY_FACADE_SOUTH_ROT)
+        city_facade_s04 = _city_usd("factory_facade_s04", CITY_PH_FACTORY_FACADE_USD_PATH, (23.0, -3.62, CITY_BACK_FACADE_Z), scale=CITY_FACTORY_BACK_FACADE_SCALE, rot=CITY_FACADE_SOUTH_ROT)
+        city_facade_s05 = _city_usd("urban_facade_s05", CITY_PH_URBAN_FACADE_USD_PATH, (47.0, -3.62, CITY_BACK_FACADE_Z), scale=CITY_URBAN_BACK_FACADE_SCALE, rot=CITY_FACADE_SOUTH_ROT)
+
+        city_real_back_n01 = _city_usd("real_building_back_n01", CITY_REAL_BUILDING_USD_PATH, (-74.0, 5.30, 0.0), scale=CITY_REAL_BUILDING_SCALE, rot=CITY_REAL_NORTH_ROT)
+        city_real_back_n02 = _city_usd("real_station_back_n02", CITY_REAL_STATION_USD_PATH, (78.0, 5.40, 0.0), scale=CITY_REAL_STATION_SCALE, rot=CITY_REAL_NORTH_ROT)
+        city_real_back_s01 = _city_usd("real_building_back_s01", CITY_REAL_BUILDING_USD_PATH, (88.0, -5.70, 0.0), scale=CITY_REAL_BUILDING_SCALE, rot=CITY_REAL_SOUTH_ROT)
+
+        city_tree_trunk_01 = _city_cylinder("tree_trunk_01", (-45.0, 1.64, 0.55), 0.055, 1.10, (0.25, 0.13, 0.06), roughness=0.80)
+        city_tree_trunk_02 = _city_cylinder("tree_trunk_02", (-21.0, 1.64, 0.55), 0.055, 1.10, (0.25, 0.13, 0.06), roughness=0.80)
+        city_tree_trunk_03 = _city_cylinder("tree_trunk_03", (5.0, 1.64, 0.55), 0.055, 1.10, (0.25, 0.13, 0.06), roughness=0.80)
+        city_tree_trunk_04 = _city_cylinder("tree_trunk_04", (31.0, 1.64, 0.55), 0.055, 1.10, (0.25, 0.13, 0.06), roughness=0.80)
+        city_tree_trunk_05 = _city_cylinder("tree_trunk_05", (57.0, 1.64, 0.55), 0.055, 1.10, (0.25, 0.13, 0.06), roughness=0.80)
+        city_tree_crown_01 = _city_box("tree_crown_01", (-45.0, 1.64, 1.35), (0.90, 0.80, 0.70), (0.12, 0.34, 0.18), roughness=0.70)
+        city_tree_crown_02 = _city_box("tree_crown_02", (-21.0, 1.64, 1.35), (0.82, 0.74, 0.66), (0.10, 0.30, 0.16), roughness=0.70)
+        city_tree_crown_03 = _city_box("tree_crown_03", (5.0, 1.64, 1.35), (0.86, 0.78, 0.68), (0.13, 0.36, 0.18), roughness=0.70)
+        city_tree_crown_04 = _city_box("tree_crown_04", (31.0, 1.64, 1.35), (0.88, 0.80, 0.70), (0.11, 0.32, 0.17), roughness=0.70)
+        city_tree_crown_05 = _city_box("tree_crown_05", (57.0, 1.64, 1.35), (0.82, 0.74, 0.66), (0.12, 0.35, 0.18), roughness=0.70)
+
+        city_light_pole_01 = _city_cylinder("streetlight_near_pole_01", (-54.0, 1.72, 1.30), 0.038, 2.60, (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_pole_02 = _city_cylinder("streetlight_near_pole_02", (-30.0, 1.72, 1.30), 0.038, 2.60, (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_pole_03 = _city_cylinder("streetlight_near_pole_03", (-6.0, 1.72, 1.30), 0.038, 2.60, (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_pole_04 = _city_cylinder("streetlight_near_pole_04", (18.0, 1.72, 1.30), 0.038, 2.60, (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_pole_05 = _city_cylinder("streetlight_near_pole_05", (42.0, 1.72, 1.30), 0.038, 2.60, (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_arm_01 = _city_box("streetlight_near_arm_01", (-54.0, 1.32, 2.58), (0.07, 0.80, 0.055), (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_arm_02 = _city_box("streetlight_near_arm_02", (-30.0, 1.32, 2.58), (0.07, 0.80, 0.055), (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_arm_03 = _city_box("streetlight_near_arm_03", (-6.0, 1.32, 2.58), (0.07, 0.80, 0.055), (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_arm_04 = _city_box("streetlight_near_arm_04", (18.0, 1.32, 2.58), (0.07, 0.80, 0.055), (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_arm_05 = _city_box("streetlight_near_arm_05", (42.0, 1.32, 2.58), (0.07, 0.80, 0.055), (0.05, 0.06, 0.07), metallic=0.65, roughness=0.30)
+        city_light_head_01 = _city_box("streetlight_near_head_01", (-54.0, 0.94, 2.56), (0.28, 0.18, 0.09), (1.0, 0.78, 0.32), emissive=(1.0, 0.55, 0.16), roughness=0.18)
+        city_light_head_02 = _city_box("streetlight_near_head_02", (-30.0, 0.94, 2.56), (0.28, 0.18, 0.09), (1.0, 0.78, 0.32), emissive=(1.0, 0.55, 0.16), roughness=0.18)
+        city_light_head_03 = _city_box("streetlight_near_head_03", (-6.0, 0.94, 2.56), (0.28, 0.18, 0.09), (1.0, 0.78, 0.32), emissive=(1.0, 0.55, 0.16), roughness=0.18)
+        city_light_head_04 = _city_box("streetlight_near_head_04", (18.0, 0.94, 2.56), (0.28, 0.18, 0.09), (1.0, 0.78, 0.32), emissive=(1.0, 0.55, 0.16), roughness=0.18)
+        city_light_head_05 = _city_box("streetlight_near_head_05", (42.0, 0.94, 2.56), (0.28, 0.18, 0.09), (1.0, 0.78, 0.32), emissive=(1.0, 0.55, 0.16), roughness=0.18)
+
+        light = AssetBaseCfg(prim_path="/World/light", spawn=DomeLightCfg(intensity=4200.0, color=(0.82, 0.88, 1.0)))
 
     scene: SceneCfg = SceneCfg(num_envs=4096, env_spacing=25.0)
     observations: PlatoonObservationsCfg = PlatoonObservationsCfg()
     rewards: PlatoonRewardsCfg = PlatoonRewardsCfg()
     algorithm: PlatoonAlgorithmCfg = PlatoonAlgorithmCfg()
     viewer: ViewerCfg = ViewerCfg(
-        eye=(8.0, -10.0, 6.0),
-        lookat=(-2.5, 0.0, 0.4),
+        eye=(-5.2, -2.95, 1.38),
+        lookat=(-11.75, 0.28, 0.54),
     )
 
     @configclass

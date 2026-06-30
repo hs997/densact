@@ -40,6 +40,11 @@ parser.add_argument(
 parser.add_argument("--eval_steps", type=int, default=600)
 parser.add_argument("--warmup_steps", type=int, default=100)
 parser.add_argument("--output_dir", type=str, default=None)
+parser.add_argument(
+    "--enable_attack_eval",
+    action="store_true",
+    help="Keep the task attack configuration active during evaluation. By default eval disables attacks.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 
@@ -69,7 +74,7 @@ def _find_happo_wrapper(env):
     return None
 
 
-def _load_task_happo_state(happo_wrapper, checkpoint_path: Path) -> None:
+def _load_task_happo_state(happo_wrapper, checkpoint_path: Path, disable_attack: bool = True) -> None:
     checkpoint = torch.load(str(checkpoint_path), map_location="cpu")
     if not isinstance(checkpoint, dict) or "platoon_happo_state" not in checkpoint:
         raise RuntimeError(f"Checkpoint has no platoon_happo_state: {checkpoint_path}")
@@ -78,7 +83,7 @@ def _load_task_happo_state(happo_wrapper, checkpoint_path: Path) -> None:
         deterministic=True,
         disable_updates=True,
         force_happo_actions=True,
-        disable_attack=True,
+        disable_attack=disable_attack,
     )
 
 
@@ -244,7 +249,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     try:
         for checkpoint_path in checkpoint_paths:
             env.reset()
-            _load_task_happo_state(happo_wrapper, checkpoint_path)
+            _load_task_happo_state(
+                happo_wrapper,
+                checkpoint_path,
+                disable_attack=not bool(args_cli.enable_attack_eval),
+            )
             router = happo_wrapper.algorithm_router
             rows: list[dict[str, Any]] = []
             for step_idx in range(int(args_cli.eval_steps)):

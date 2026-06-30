@@ -56,6 +56,7 @@ class PlatoonHAPPOEnvCfg(PlatoonEnvCfg):
         self.algorithm.attack_dos_proxy_coef = 0.3
 
         # HAPPO baseline knobs
+        self.algorithm.happo_use_factor = True
         self.algorithm.happo_actor_lr = 1.0e-5
         self.algorithm.happo_critic_lr = 1.0e-5
         self.algorithm.happo_clip_param = 0.05

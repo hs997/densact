@@ -129,7 +129,31 @@ def _collect_eval_metrics(router, rew, dones) -> dict[str, Any]:
     row.update(router._collect_attack_metrics(None))
     row.update(router._collect_teacher_metrics(None))
     row.update(router._collect_shield_metrics())
+    row["eval_total_reward_mean"] = _reward_term_total(row)
     return row
+
+
+def _reward_term_total(row: dict[str, Any]) -> float:
+    """Approximate task total reward from logged reward-manager terms.
+
+    In task-local HAPPO evaluation, the outer env reward can be zero while the
+    reward manager still exposes the weighted task terms used for diagnostics.
+    """
+
+    total = 0.0
+    found = False
+    for key, value in row.items():
+        if key == "reward_env_mean" or not key.startswith("reward_"):
+            continue
+        numeric = _to_float(value)
+        if numeric is None:
+            continue
+        total += numeric
+        found = True
+    if found:
+        return total
+    fallback = _to_float(row.get("reward_env_mean"))
+    return float(fallback) if fallback is not None else 0.0
 
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -150,6 +174,8 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def _summarize(checkpoint: Path, rows: list[dict[str, Any]], warmup_steps: int) -> dict[str, Any]:
     usable = rows[min(max(warmup_steps, 0), len(rows)) :] or rows
+    step_rewards = [_to_float(row.get("eval_total_reward_mean")) for row in usable]
+    step_rewards = [value for value in step_rewards if value is not None]
     worst_counter = Counter()
     for row in usable:
         worst = _to_float(row.get("lateral_worst_pair"))
@@ -161,6 +187,9 @@ def _summarize(checkpoint: Path, rows: list[dict[str, Any]], warmup_steps: int) 
         "checkpoint_path": str(checkpoint),
         "eval_rows": len(rows),
         "summary_rows": len(usable),
+        "episode_return_mean": sum(step_rewards),
+        "step_reward_mean": (sum(step_rewards) / len(step_rewards)) if step_rewards else 0.0,
+        "outer_reward_env_mean": _mean(usable, "reward_env_mean"),
         "command_speed_mean": _mean(usable, "command_speed_mean"),
         "leader_speed_mean": _mean(usable, "leader_speed_mean"),
         "platoon_speed_mean": _mean(usable, "platoon_speed_mean"),
@@ -173,6 +202,8 @@ def _summarize(checkpoint: Path, rows: list[dict[str, Any]], warmup_steps: int) 
         "lateral_error_abs_max_mean": _mean(usable, "lateral_error_abs_max"),
         "lateral_error_abs_max_peak": _max(usable, "lateral_error_abs_max"),
         "gap_error_abs_mean": _mean(usable, "gap_error_abs_mean"),
+        "min_pair_gap_mean": _mean(usable, "min_pair_gap_mean"),
+        "collision_rate": _mean(usable, "collision_rate"),
         "heading_error_abs_mean": _mean(usable, "heading_error_abs_mean"),
         "pair_heading_error_abs_mean": _mean(usable, "pair_heading_error_abs_mean"),
         "done_rate": _mean(usable, "done_rate"),
@@ -199,12 +230,15 @@ def _print_summary(summary: dict[str, Any]) -> None:
     print(
         "[EVAL] "
         f"{summary['checkpoint']}: "
+        f"return={summary['episode_return_mean']:.3f}, "
         f"cmd={summary['command_speed_mean']:.3f}, "
         f"leader={summary['leader_speed_mean']:.3f}, "
         f"platoon={summary['platoon_speed_mean']:.3f}, "
         f"speed_err={summary['speed_error_abs_mean']:.3f}, "
         f"center={summary['centerline_error_abs_mean']:.3f}, "
         f"lat={summary['lateral_error_abs_mean']:.3f}, "
+        f"min_gap={summary['min_pair_gap_mean']:.3f}, "
+        f"collision={summary['collision_rate']:.3f}, "
         f"p=[{summary['lateral_pair_1_abs_mean']:.3f},"
         f"{summary['lateral_pair_2_abs_mean']:.3f},"
         f"{summary['lateral_pair_3_abs_mean']:.3f},"

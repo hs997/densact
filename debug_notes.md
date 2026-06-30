@@ -5969,3 +5969,33 @@ Tell Codex:
   - `shield_lateral_rate`: `0.1069 -> 0.9527`
   - `local_reward_shaping_mean`: `-0.0077 -> -0.1181`
 - Therefore the current staged CSV is valid for robustness/threshold evidence but is not ideal to show a classic monotonic learning curve. To show learning, run fixed-condition evaluation after periodic checkpoints within each stage and plot cumulative episode return under the same attack setting.
+
+2026-07-01 02:27 fixed-medium three-algorithm comparison setup:
+
+- User requested a fixed `medium` attack comparison under identical eval conditions for:
+  - MAPPO baseline;
+  - HAPPO without meta-learning;
+  - current HAPPO with meta-learning preserved unchanged as the third method.
+- Before any comparison edits, current code/assets were backed up locally to:
+  - `/home/cnc/SSD_1T/xzw/IsaacLab-main/backups/pre_medium_compare_code_assets_20260701_022215.tar`
+- The pre-comparison state was committed and pushed to GitHub:
+  - branch `freeze/cagan-step3-dualchannel-logging`
+  - commit `79b8290 Backup hard-b benchmark and plotting tools before medium comparison`
+- Added a MAPPO-like baseline switch by allowing the task-local HAPPO runner to disable HAPPO's sequential importance factor while keeping the same centralized critic/per-agent actor structure.
+- Added/updated scripts for fixed-medium comparison:
+  - `scripts/tools/run_medium_algorithm_comparison.sh`
+  - `scripts/tools/plot_medium_algorithm_comparison.py`
+  - `scripts/reinforcement_learning/rsl_rl/eval_happo_platoon.py`
+- Static checks passed:
+  - `python3 -m py_compile ...`
+  - `bash -n scripts/tools/run_medium_algorithm_comparison.sh`
+- No active training/eval process was detected before starting the new sanity run.
+- First tiny sanity showed that MAPPO and HAPPO-no-meta branches can train/save/evaluate, but eval return printed as `0.000` because `reward_env_mean` is zero in this task-local HAPPO eval path while reward-manager terms are populated.
+- Fixed `scripts/reinforcement_learning/rsl_rl/eval_happo_platoon.py` so fixed-medium episode return is computed from the logged `reward_*` reward-manager terms (`eval_total_reward_mean`) instead of relying only on outer `reward_env_mean`.
+- Re-ran static checks after the fix; `py_compile` and `bash -n` still pass.
+- Second tiny sanity passed end-to-end:
+  - package root: `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/medium_compare_sanity2_20260701_023212_package`
+  - tarball: `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/medium_compare_sanity2_20260701_023212_package.tar.gz`
+  - generated fixed-medium comparison figures: `fig_01_fixed_medium_episode_return.png`, `fig_02_fixed_medium_eval_metrics.png`, `fig_03_fixed_medium_final_bars.png`
+  - all three eval summaries show `attack_enabled=1`, `attack_max_fdi_acc=0.5`, `attack_max_dos_rate=0.1`, and nonzero `episode_return_mean`.
+- Added a final plotting fix so `model_final.pt` is placed at the true `MAX_ITERATIONS` coordinate rather than reusing the last selected intermediate checkpoint coordinate.

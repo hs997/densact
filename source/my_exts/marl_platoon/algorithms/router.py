@@ -222,8 +222,8 @@ class PlatoonAlgorithmRouter:
         """Build the selected algorithm from a reset observation sample.
 
         PPO returns `None` so the existing RSL-RL PPO path remains untouched.
-        HAPPO creates an internal runner but does not start a separate training
-        entrypoint.
+        HAPPO/MAPPO create an internal centralized-critic runner but do not
+        start a separate training entrypoint.
         """
         agent_obs = self.to_agent_obs(obs)
         obs_dim = int(agent_obs.shape[-1])
@@ -242,7 +242,7 @@ class PlatoonAlgorithmRouter:
 
         if self.algorithm == "ppo":
             return None
-        if self.algorithm != "happo":
+        if self.algorithm not in {"happo", "mappo"}:
             raise ValueError(f"Unsupported platoon algorithm: {self.algorithm}")
         if self.runner is not None and self.info is not None:
             if (
@@ -275,6 +275,8 @@ class PlatoonAlgorithmRouter:
             log_std_max=float(getattr(self.cfg, "happo_log_std_max", 2.0)),
             max_grad_norm=float(getattr(self.cfg, "happo_max_grad_norm", 0.5)),
             device=str(self.device),
+            use_happo_factor=bool(getattr(self.cfg, "happo_use_factor", self.algorithm == "happo"))
+            and self.algorithm == "happo",
         )
         self.runner = PlatoonHAPPORunner(happo_cfg)
         self.runner.buffer.set_initial_obs(agent_obs, share_obs)

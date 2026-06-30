@@ -36,7 +36,10 @@ class PlatoonAlgorithmCfg:
     happo_log_level: str = "basic"
     freeze_outer_ppo: bool = False
 
-    # HAPPO stability knobs (task-internal)
+    # HAPPO/MAPPO stability knobs (task-internal)
+    # MAPPO uses the same centralized critic and per-agent actors but disables
+    # HAPPO's sequential importance factor during actor updates.
+    happo_use_factor: bool = True
     happo_actor_lr: float = 1.0e-5
     happo_critic_lr: float = 1.0e-5
     happo_clip_param: float = 0.05

@@ -40,6 +40,7 @@ class PlatoonHAPPOCfg:
     max_grad_norm: float = 0.5
     device: str = "cpu"
     fixed_order: bool = True
+    use_happo_factor: bool = True
 
 
 class PlatoonHAPPORunner:
@@ -119,12 +120,13 @@ class PlatoonHAPPORunner:
             with torch.no_grad():
                 old_log_probs = self.buffer.action_log_probs[:, :, agent_id].reshape(-1, 1)
             actor_info = self.actors[agent_id].train_on_buffer(self.buffer, advantages, agent_id, factor)
-            with torch.no_grad():
-                new_log_probs = self._evaluate_actor_log_probs_chunked(agent_id)
-                ratio = torch.exp(torch.clamp(new_log_probs - old_log_probs, min=-20.0, max=20.0)).reshape(
-                    self.cfg.episode_length, self.cfg.num_envs, 1
-                )
-                factor = factor * ratio
+            if self.cfg.use_happo_factor:
+                with torch.no_grad():
+                    new_log_probs = self._evaluate_actor_log_probs_chunked(agent_id)
+                    ratio = torch.exp(torch.clamp(new_log_probs - old_log_probs, min=-20.0, max=20.0)).reshape(
+                        self.cfg.episode_length, self.cfg.num_envs, 1
+                    )
+                    factor = factor * ratio
             actor_train_infos.append(actor_info)
             if self.device.type == "cuda":
                 torch.cuda.empty_cache()

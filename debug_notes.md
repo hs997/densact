@@ -6117,3 +6117,6 @@ Tell Codex:
   - HAPPO w/o meta best-return checkpoint: `model_1200.pt`, return `18332.26`, speed `0.0585`, lateral `0.0186`, centerline `0.0189`.
   - HAPPO + meta best-return checkpoint: `model_1500.pt`, return `18641.50`, speed `0.0540`, lateral `0.0154`, centerline `0.0178`.
 - Interpretation: all three methods eventually become safe under fixed medium attack. By best checkpoint, HAPPO + meta has the highest return and lowest speed error, while MAPPO has the lowest lateral error at its best checkpoint. By final checkpoint, HAPPO w/o meta has the strongest final return and lowest lateral/centerline error.
+- The plotting fix and final notes were committed/pushed to GitHub:
+  - branch `freeze/cagan-step3-dualchannel-logging`
+  - commit `597f428 Fix final checkpoint iteration in medium comparison plots`

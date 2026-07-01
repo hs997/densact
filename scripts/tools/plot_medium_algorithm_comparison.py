@@ -22,6 +22,20 @@ LABELS = {
 }
 
 
+def manifest_value(result_root: Path, key: str, default: int) -> int:
+    path = result_root / "manifest.txt"
+    if not path.exists():
+        return default
+    for line in path.read_text().splitlines():
+        if not line.startswith(f"{key}="):
+            continue
+        try:
+            return int(line.split("=", 1)[1].strip())
+        except ValueError:
+            return default
+    return default
+
+
 def checkpoint_iteration(name: str, fallback: int) -> int:
     match = re.search(r"model_(\d+)", str(name))
     if match:
@@ -31,6 +45,7 @@ def checkpoint_iteration(name: str, fallback: int) -> int:
 
 def load_eval(result_root: Path) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
+    final_iteration = manifest_value(result_root, "max_iterations", -1)
     for label in LABELS:
         summary_path = result_root / "evaluation" / label / "eval_summary.csv"
         if not summary_path.exists():
@@ -44,7 +59,7 @@ def load_eval(result_root: Path) -> pd.DataFrame:
             for _, row in df.iterrows()
             if checkpoint_iteration(str(row.get("checkpoint", "")), -1) >= 0
         ]
-        fallback = max(numeric_iters) if numeric_iters else len(df)
+        fallback = final_iteration if final_iteration > 0 else (max(numeric_iters) if numeric_iters else len(df))
         df["algorithm"] = label
         df["algorithm_name"] = LABELS[label]
         df["iteration"] = [

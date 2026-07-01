@@ -6002,3 +6002,118 @@ Tell Codex:
 - The fixed-medium comparison pipeline code was committed and pushed:
   - branch `freeze/cagan-step3-dualchannel-logging`
   - commit `888bcf9 Add fixed-medium MAPPO HAPPO comparison pipeline`
+
+2026-07-01 02:39 fixed-medium formal comparison run:
+
+- The current GitHub state including notes was pushed at commit `db19940`.
+- Formal fixed-medium three-algorithm comparison was launched with:
+  - tag `medium_compare_fixed_medium_20260701_023837`
+  - `MAX_ITERATIONS=3000`
+  - `EVAL_EVERY=300`
+  - `EVAL_STEPS=1000`
+  - `NUM_ENVS=64`
+  - `EVAL_NUM_ENVS=32`
+  - fixed `medium` attack: `max_fdi_pos=2.0`, `max_fdi_acc=0.50`, `max_dos_rate=0.10`
+- The first `nohup` launch attempt (`medium_compare_fixed_medium_20260701_023756`) only wrote the train header and did not leave a real training process, so it was discarded.
+- Relaunched with `setsid`; process `3268227` is active and has entered Isaac/AppLauncher for the MAPPO branch.
+- Active log:
+  - `/home/cnc/SSD_1T/xzw/IsaacLab-main/train_medium_compare_fixed_medium_20260701_023837.log`
+- First runtime check: MAPPO branch reached learning iteration about `17/3000`, running around `900-1000 steps/s`; no OOM, Hydra override error, or missing-asset error observed.
+- 5-minute runtime check:
+  - MAPPO branch reached about `168/3000`;
+  - throughput remains around `980-1000 steps/s`;
+  - `Episode_Termination/time_out=1.0`, `reset_on_bad_ori=0.0`;
+  - no crash/OOM observed;
+  - current early-training speed error is about `0.29`, which is only an intermediate random-policy training state, not a final comparison result.
+- 10-12 minute runtime check:
+  - MAPPO passed the first `300`-iteration checkpoint and reached about `323/3000`;
+  - latest CSV metrics: `speed_error_abs_mean≈0.147`, `lateral_error_abs_mean≈0.108`, `centerline_error_abs_mean≈0.085`, `gap_error_abs_mean≈0.206`, `min_pair_gap_mean≈1.374`;
+  - `collision_rate=0`, `termination_reset_on_bad_ori=0`;
+  - fixed medium attack confirmed in metrics: `attack_max_fdi_acc=0.5`, `attack_max_dos_rate=0.1`.
+- 17-minute runtime check:
+  - MAPPO reached about `477/3000`;
+  - speed error improved to roughly `0.10-0.11`;
+  - latest lateral/centerline errors fluctuate but remain bounded (`lateral≈0.10`, `centerline≈0.06` in the tail);
+  - `min_pair_gap_mean≈1.43`, `collision_rate=0`, `termination_reset_on_bad_ori=0`.
+- 23-minute runtime check:
+  - MAPPO reached about `628/3000`, and `model_600.pt` exists;
+  - tail metrics mostly improved: `speed_error_abs_mean≈0.07-0.10`, `lateral_error_abs_mean≈0.04-0.064`, `centerline_error_abs_mean≈0.026-0.032`;
+  - `min_pair_gap_mean≈1.45`, `collision_rate=0`, `termination_reset_on_bad_ori=0`;
+  - one tail row showed a temporary speed-error spike around `0.305`, then recovered; continue monitoring without intervention.
+- 28-minute runtime check:
+  - MAPPO reached about `781/3000`;
+  - speed error remains around `0.09-0.10`;
+  - `min_pair_gap_mean≈1.45`, `collision_rate=0`, `termination_reset_on_bad_ori=0`;
+  - lateral error briefly rose to about `0.22` and then returned around `0.13`; centerline tail rose to about `0.12`. This is not a safety failure but should be watched for trend persistence.
+- 34-minute runtime check:
+  - MAPPO reached about `935/3000`;
+  - speed error remains around `0.09-0.11`;
+  - `min_pair_gap_mean≈1.45`, `collision_rate=0`, `termination_reset_on_bad_ori=0`;
+  - lateral error remains noisy (`≈0.23 -> 0.15` in the tail) and centerline is about `0.10`;
+  - shield lateral turn mean is about `0.048`, not saturated, but shield lateral critical rate is about `0.14`; continue monitoring without intervention.
+- 39-minute runtime check:
+  - MAPPO reached about `1088/3000`;
+  - speed error remains acceptable (`≈0.096-0.124`);
+  - safety remains normal: `min_pair_gap_mean≈1.45`, `collision_rate=0`, `termination_reset_on_bad_ori=0`;
+  - lateral error is persistently elevated in this window (`≈0.21-0.25`) and centerline is about `0.117-0.126`; shield lateral turn remains around `0.048`, so this is not shield saturation.
+- 44-minute runtime check:
+  - MAPPO reached about `1240/3000`;
+  - `model_best.pt` updated at iter `1236` with score about `835.98`;
+  - safety remains normal: `min_pair_gap_mean≈1.45`, `collision_rate=0`, `termination_reset_on_bad_ori=0`;
+  - speed error is about `0.13-0.14`;
+  - lateral/centerline errors are worse in this window (`lateral≈0.27-0.28`, `centerline≈0.15`), making MAPPO's lateral stability a likely weak point in the final comparison.
+- 50-minute runtime check:
+  - MAPPO reached about `1395/3000`;
+  - safety remains normal: `min_pair_gap_mean≈1.45`, `collision_rate=0`, `termination_reset_on_bad_ori=0`;
+  - speed error is about `0.124-0.142`;
+  - lateral and centerline issues persist (`lateral≈0.26-0.28`, `centerline≈0.15`), so MAPPO baseline is likely runnable but laterally weaker.
+- 55-minute runtime check:
+  - MAPPO reached about `1548/3000`;
+  - safety remains normal (`min_pair_gap_mean≈1.45`, no collision/reset);
+  - speed error is still acceptable (`≈0.09-0.116`);
+  - lateral error ramps in the tail from `≈0.137` to `≈0.265`, and centerline from `≈0.088` to `≈0.141`;
+  - current interpretation: MAPPO baseline's weak point is lateral/centerline stability, not speed tracking or pair-gap safety.
+- 61-minute runtime check:
+  - MAPPO reached `1700/3000`;
+  - safety remains normal (`min_pair_gap_mean≈1.45`, no collision/reset);
+  - speed error mostly `≈0.096-0.12`;
+  - lateral error ramps from `≈0.094` to `≈0.158`, and centerline reaches `≈0.108`; this is better than the previous high-lateral window but still shows periodic lateral drift.
+- 66-minute runtime check:
+  - MAPPO reached about `1852/3000`;
+  - after `model_1800`, lateral/centerline improved relative to prior windows: `lateral≈0.047 -> 0.117`, `centerline≈0.023 -> 0.061`;
+  - speed error about `0.08-0.10`;
+  - safety remains normal: `min_pair_gap_mean≈1.45+`, `collision_rate=0`, `termination_reset_on_bad_ori=0`.
+- 71-minute runtime check:
+  - MAPPO reached about `2005/3000` and saved `model_2000.pt`;
+  - post-boundary tail (`2001-2005`) looks good: `speed_error_abs_mean≈0.067-0.089`, `lateral≈0.043-0.080`, `centerline≈0.023-0.035`;
+  - safety remains normal: `min_pair_gap_mean≈1.45-1.48`, `collision_rate=0`, `termination_reset_on_bad_ori=0`;
+  - update `2000` had an episode-boundary speed spike (`≈0.314`) but recovered immediately.
+
+2026-07-01 fixed-medium comparison completed:
+
+- Formal run `medium_compare_fixed_medium_20260701_023837` completed successfully with exit status `0`.
+- No residual training/eval process remains for this tag.
+- Result root:
+  - `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/medium_compare_fixed_medium_20260701_023837_package`
+- Tarball:
+  - `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/medium_compare_fixed_medium_20260701_023837_package.tar.gz`
+  - size about `80M`
+- Generated figures:
+  - `fig_01_fixed_medium_episode_return.png`
+  - `fig_02_fixed_medium_eval_metrics.png`
+  - `fig_03_fixed_medium_final_bars.png`
+  - plus `combined_eval_summary.csv`
+- Fixed plotting script after completion so `model_final.pt` uses `max_iterations=3000` from `manifest.txt` rather than being inferred as `2700`; figures and tarball were regenerated.
+- Fixed medium eval condition was active for all methods:
+  - `attack_enabled=1`
+  - `attack_max_fdi_acc=0.5`
+  - `attack_max_dos_rate=0.1`
+- Final checkpoint comparison:
+  - MAPPO final: return `18036.83`, speed `0.0603`, lateral `0.0139`, centerline `0.0163`, min gap `1.4973`, collision `0`, bad-orientation reset `0`.
+  - HAPPO w/o meta final: return `18200.34`, speed `0.0602`, lateral `0.0118`, centerline `0.0131`, min gap `1.4990`, collision `0`, reset `0`.
+  - HAPPO + meta final: return `18150.25`, speed `0.0601`, lateral `0.0155`, centerline `0.0177`, min gap `1.4991`, collision `0`, reset `0`.
+- Best-return checkpoint comparison:
+  - MAPPO best-return checkpoint: `model_2100.pt`, return `18526.93`, speed `0.0561`, lateral `0.0066`, centerline `0.0130`.
+  - HAPPO w/o meta best-return checkpoint: `model_1200.pt`, return `18332.26`, speed `0.0585`, lateral `0.0186`, centerline `0.0189`.
+  - HAPPO + meta best-return checkpoint: `model_1500.pt`, return `18641.50`, speed `0.0540`, lateral `0.0154`, centerline `0.0178`.
+- Interpretation: all three methods eventually become safe under fixed medium attack. By best checkpoint, HAPPO + meta has the highest return and lowest speed error, while MAPPO has the lowest lateral error at its best checkpoint. By final checkpoint, HAPPO w/o meta has the strongest final return and lowest lateral/centerline error.

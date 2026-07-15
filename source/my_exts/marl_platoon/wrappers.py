@@ -12,7 +12,7 @@ def make_happo_routed_platoon_env(*args, **kwargs):
     through the task-local HAPPO runner.
     """
     env = ManagerBasedRLEnv(*args, **kwargs)
-    return IsaacHAPPOInternalWrapper(env, num_agents=4)
+    return IsaacHAPPOInternalWrapper(env, num_agents=5)
 
 
 class IsaacHAPPOInternalWrapper(gym.Wrapper):
@@ -48,7 +48,14 @@ class IsaacHAPPOInternalWrapper(gym.Wrapper):
         self.freeze_outer_ppo = bool(getattr(algorithm_cfg, "freeze_outer_ppo", False))
         self.happo_action_clip = float(getattr(algorithm_cfg, "happo_action_clip", 1.0))
         self.happo_action_warmup_updates = int(getattr(algorithm_cfg, "happo_action_warmup_updates", 0))
+        self.happo_urdf_wheel_sign_adapter = bool(
+            getattr(algorithm_cfg, "happo_urdf_wheel_sign_adapter", True)
+        )
+        self._wheel_axis_signs = None
         self._last_agent_obs = None
+        self._inference_mode = False
+        self._deterministic_actions = False
+        self._disable_online_updates = False
         self._happo_log_level = str(getattr(algorithm_cfg, "happo_log_level", "basic")).lower() if algorithm_cfg is not None else "basic"
         if algorithm_cfg is not None and self._happo_log_level != "off":
             print(
@@ -58,6 +65,9 @@ class IsaacHAPPOInternalWrapper(gym.Wrapper):
                 f"teacher={getattr(algorithm_cfg, 'enable_teacher', False)}, "
                 f"attack={getattr(algorithm_cfg, 'enable_attack', False)}, "
                 f"shield={getattr(algorithm_cfg, 'enable_shield', False)}, "
+                f"wheel_axis_adapter={self.happo_urdf_wheel_sign_adapter}, "
+                f"action_clip={self.happo_action_clip}, "
+                f"warmup_updates={self.happo_action_warmup_updates}, "
                 f"log_level={self._happo_log_level}"
             )
 
@@ -68,43 +78,84 @@ class IsaacHAPPOInternalWrapper(gym.Wrapper):
         self._last_agent_obs = agent_obs
         if self.algorithm_router is not None:
             self.algorithm_router.build_from_sample(agent_obs)
+            if self._inference_mode:
+                self.algorithm_router.set_inference_mode(
+                    deterministic=self._deterministic_actions,
+                    disable_updates=self._disable_online_updates,
+                    disable_attack=True,
+                )
         return obs_dict, info
 
     def step(self, actions):
         used_happo_actions = False
         if self._should_use_happo_actions():
-            flat_actions = self.algorithm_router.act(self._last_agent_obs)
+            flat_actions = self.algorithm_router.act(
+                self._last_agent_obs,
+                deterministic=self._deterministic_actions,
+            )
+            raw_happo_actions = flat_actions
             if self.happo_action_clip > 0.0:
                 flat_actions = torch.clamp(flat_actions, -self.happo_action_clip, self.happo_action_clip)
+            clipped_happo_actions = flat_actions
+            joint_actions = flat_actions.view(self.env.num_envs, self.num_agents, self.act_dim)
             if self.algorithm_router.pipeline is not None:
-                joint_actions = flat_actions.view(self.env.num_envs, self.num_agents, self.act_dim)
-                flat_actions = self.algorithm_router.pipeline.postprocess_action_for_env(
+                joint_actions = self.algorithm_router.pipeline.postprocess_action_for_env(
                     self._last_agent_obs, joint_actions
-                ).reshape(self.env.num_envs, -1)
+                )
+            if self.happo_action_clip > 0.0:
+                joint_actions = torch.clamp(joint_actions, -self.happo_action_clip, self.happo_action_clip)
+            executed_semantic_actions = joint_actions.detach().clone()
+            joint_actions = self._adapt_wheel_axes_for_env(joint_actions)
+            flat_actions = joint_actions.reshape(self.env.num_envs, -1)
+            if self.algorithm_router is not None:
+                self.algorithm_router.record_action_diagnostics(
+                    raw_happo_actions.reshape(self.env.num_envs, self.num_agents, self.act_dim),
+                    executed_semantic_actions,
+                )
+            if (
+                self._happo_log_level == "debug"
+                and not hasattr(self, "_debug_happo_action_once")
+                and self.algorithm_router.happo_action_steps >= 20
+            ):
+                self._debug_happo_action_once = True
+                print("[DEBUG][happo_action] raw_leader[0]=", raw_happo_actions[0, : self.act_dim].detach().cpu().tolist())
+                print("[DEBUG][happo_action] clipped_leader[0]=", clipped_happo_actions[0, : self.act_dim].detach().cpu().tolist())
+                print("[DEBUG][happo_action] env_leader[0]=", flat_actions[0, : self.act_dim].detach().cpu().tolist())
             used_happo_actions = True
         else:
             # Warmup stage: still run HAPPO actor forward so rollout/update can proceed,
             # but keep executing the external action to avoid early destabilization.
             if self.algorithm_router is not None and self.algorithm_router.runner is not None and self._last_agent_obs is not None:
-                _ = self.algorithm_router.act(self._last_agent_obs)
+                _ = self.algorithm_router.act(
+                    self._last_agent_obs,
+                    deterministic=self._deterministic_actions,
+                )
             if isinstance(actions, torch.Tensor):
                 flat_actions = actions.reshape(self.env.num_envs, -1)
             else:
                 flat_actions = torch.tensor(actions, device=self.env.device).reshape(self.env.num_envs, -1)
+            if self.algorithm_router is not None and self.happo_action_clip > 0.0:
+                flat_actions = torch.clamp(flat_actions, -self.happo_action_clip, self.happo_action_clip)
 
+        if self.happo_action_clip > 0.0:
+            flat_actions = torch.clamp(flat_actions, -self.happo_action_clip, self.happo_action_clip)
         obs_dict, rew, terminated, truncated, extras = self.env.step(flat_actions)
-        if self.freeze_outer_ppo:
-            rew = torch.zeros_like(rew)
+        student_rew = rew
+        outer_rew = torch.zeros_like(rew) if self.freeze_outer_ppo else rew
         obs = obs_dict["policy"] if isinstance(obs_dict, dict) and "policy" in obs_dict else obs_dict
         agent_obs = self._reshape_obs(obs)
 
-        if self.algorithm_router is not None and self.algorithm_router.runner is not None:
+        if (
+            not self._disable_online_updates
+            and self.algorithm_router is not None
+            and self.algorithm_router.runner is not None
+        ):
             dones = torch.logical_or(terminated, truncated)
-            self.algorithm_router.observe_step(agent_obs, rew, dones)
+            self.algorithm_router.observe_step(agent_obs, student_rew, dones)
             if self.algorithm_router.pipeline is None:
                 self.algorithm_router.train_if_ready(agent_obs)
         self._last_agent_obs = agent_obs
-        return obs_dict, rew, terminated, truncated, extras
+        return obs_dict, outer_rew, terminated, truncated, extras
 
     def _should_use_happo_actions(self) -> bool:
         warmup_ok = True
@@ -118,6 +169,42 @@ class IsaacHAPPOInternalWrapper(gym.Wrapper):
             and self._last_agent_obs is not None
         )
 
+    def set_inference_mode(
+        self,
+        *,
+        deterministic: bool = True,
+        disable_updates: bool = True,
+        force_happo_actions: bool = True,
+        disable_attack: bool = True,
+    ) -> None:
+        """Switch task-local HAPPO routing to play/evaluation behavior."""
+        self._inference_mode = True
+        self._deterministic_actions = bool(deterministic)
+        self._disable_online_updates = bool(disable_updates)
+        if force_happo_actions:
+            self.use_happo_actions = True
+            self.happo_action_warmup_updates = 0
+        if self.algorithm_router is not None:
+            self.algorithm_router.set_inference_mode(
+                deterministic=deterministic,
+                disable_updates=disable_updates,
+                disable_attack=disable_attack,
+            )
+
+    def state_dict(self) -> dict:
+        if self.algorithm_router is None:
+            return {}
+        return self.algorithm_router.state_dict()
+
+    def load_state_dict(self, state: dict, strict: bool = True) -> None:
+        if self.algorithm_router is None:
+            raise RuntimeError("Platoon algorithm router is not configured.")
+        if self.algorithm_router.runner is None:
+            if self._last_agent_obs is None:
+                raise RuntimeError("Cannot load HAPPO state before reset/build.")
+            self.algorithm_router.build_from_sample(self._last_agent_obs)
+        self.algorithm_router.load_state_dict(state, strict=strict)
+
     def _infer_total_action_dim(self) -> int:
         action_manager = getattr(self.env, "action_manager", None)
         for attr_name in ("action_dim", "total_action_dim", "num_actions"):
@@ -130,6 +217,43 @@ class IsaacHAPPOInternalWrapper(gym.Wrapper):
         if action_manager is not None and hasattr(action_manager, "_terms"):
             return sum(int(getattr(term, "action_dim", 0)) for term in action_manager._terms.values())
         raise AttributeError("Cannot infer total action dimension from IsaacLab env/action manager.")
+
+    def _adapt_wheel_axes_for_env(self, joint_actions: torch.Tensor) -> torch.Tensor:
+        if not self.happo_urdf_wheel_sign_adapter or joint_actions.shape[-1] != 4:
+            return joint_actions
+        signs = self._get_wheel_axis_signs(joint_actions.device, joint_actions.dtype)
+        if signs is None:
+            return joint_actions
+        return joint_actions * signs
+
+    def _get_wheel_axis_signs(self, device, dtype):
+        if self._wheel_axis_signs is not None:
+            return self._wheel_axis_signs.to(device=device, dtype=dtype)
+
+        action_terms = getattr(getattr(self.env, "action_manager", None), "_terms", {})
+        signs = torch.ones((1, self.num_agents, self.act_dim), device=device, dtype=dtype)
+        resolved_names = []
+        for agent_id in range(self.num_agents):
+            term = action_terms.get(f"joint_vel_{agent_id + 1}") if isinstance(action_terms, dict) else None
+            joint_names = getattr(term, "_joint_names", None) or []
+            resolved_names.append(list(joint_names))
+            if len(joint_names) != self.act_dim:
+                if self.act_dim == 4:
+                    signs[:, agent_id, :] = torch.tensor([1.0, 1.0, -1.0, -1.0], device=device, dtype=dtype)
+                continue
+            for joint_id, joint_name in enumerate(joint_names):
+                name = str(joint_name).lower()
+                if name.startswith(("r", "right")) or "_r" in name or "right" in name:
+                    signs[:, agent_id, joint_id] = -1.0
+
+        self._wheel_axis_signs = signs
+        if self._happo_log_level != "off" and not hasattr(self, "_printed_wheel_axis_adapter"):
+            self._printed_wheel_axis_adapter = True
+            print(
+                "[Platoon HAPPO] URDF wheel-axis adapter active: "
+                f"signs={signs[0].detach().cpu().tolist()}, joint_names={resolved_names}"
+            )
+        return signs
 
     def _reshape_obs(self, obs_tensor):
         if not isinstance(obs_tensor, torch.Tensor):
@@ -248,9 +372,8 @@ class IsaacMARLWrapper(gym.Wrapper):
             self.algorithm_router.train_if_ready(agent_obs)
         self._last_agent_obs = agent_obs
 
-        # 处理奖励 (Reward)
-        # 如果 Isaac Lab 返回的是 (num_envs, 1) 的共享奖励，你可能需要把它广播给所有智能体
-        # 这里为了通用，我们先假设直接透传，后续根据你的算法具体调整
+        # 返回原始 IsaacLab 奖励；task-local HAPPO/MGRS 路径已在
+        # algorithm_router.observe_step() 中处理多智能体奖励与 Teacher shaping。
 
         return agent_obs, rew, terminated, truncated, extras
 

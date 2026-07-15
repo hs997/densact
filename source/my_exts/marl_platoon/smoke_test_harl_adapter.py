@@ -30,7 +30,7 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Smoke test HARL adapter for platoon.")
 parser.add_argument("--task", type=str, default="Isaac-Marl-Platoon-v0")
 parser.add_argument("--num_envs", type=int, default=1)
-parser.add_argument("--num_agents", type=int, default=4)
+parser.add_argument("--num_agents", type=int, default=5)
 parser.add_argument("--obs_dim", type=int, default=18)
 parser.add_argument("--act_dim", type=int, default=4)
 AppLauncher.add_app_launcher_args(parser)

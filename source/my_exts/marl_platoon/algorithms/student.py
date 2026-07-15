@@ -10,7 +10,12 @@ from marl_platoon.harl_adapter import merge_agent_obs
 
 
 class HAPPOStudentModule(StudentModule):
-    """Adapter that wraps `PlatoonHAPPORunner` as a pipeline student module."""
+    """Lower-level Student optimizer for the paper's MGRS pipeline.
+
+    The Student does not design or alter rewards. It receives the shaped
+    lower-level reward R_phi = r_env + F_phi from the pipeline/Teacher and uses
+    HAPPO as the practical HATRL-style sequential policy optimizer.
+    """
 
     def __init__(self, runner: PlatoonHAPPORunner):
         self.runner = runner
@@ -31,9 +36,9 @@ class HAPPOStudentModule(StudentModule):
             raise RuntimeError("HAPPO student has no pending actions.")
         return self._pending_actions
 
-    def act(self, obs: torch.Tensor) -> torch.Tensor:
+    def act(self, obs: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
         share_obs = merge_agent_obs(obs)
-        joint_actions, joint_log_probs, values = self.runner.act(obs, share_obs)
+        joint_actions, joint_log_probs, values = self.runner.act(obs, share_obs, deterministic=deterministic)
         self._pending_actions = joint_actions
         self._pending_log_probs = joint_log_probs
         self._pending_values = values
@@ -42,6 +47,10 @@ class HAPPOStudentModule(StudentModule):
     def observe(self, batch: StepBatch) -> None:
         if not self.has_pending_action:
             raise RuntimeError("HAPPO student has no pending action. Call act() before observe().")
+        # batch.rewards is already the paper lower-level reward
+        # R_phi(tilde_y_i, u_i) = r_env + F_phi(tilde_y_i, u_i), produced by the
+        # pipeline/Teacher before Student observation. The Student only stores it
+        # and performs policy optimization.
         self._last_next_obs = batch.next_obs
         self.runner.buffer.insert(
             batch.next_obs,

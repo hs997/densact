@@ -1,8 +1,8 @@
-"""Task-local HAPPO runner skeleton for marl_platoon.
+"""Task-local HAPPO runner for marl_platoon.
 
 The official IsaacLab launch path remains responsible for creating the app and
-environment. This runner is a reusable internal component that can later be
-called from the platoon task algorithm switch when `algorithm == "happo"`.
+environment. This runner is the lower-level HAPPO-style trust-region optimizer
+used by the task-local MGRS pipeline when `algorithm == "happo"`.
 """
 
 from __future__ import annotations
@@ -32,10 +32,23 @@ class PlatoonHAPPOCfg:
     clip_param: float = 0.1
     ppo_epoch: int = 3
     num_mini_batches: int = 4
+    factor_eval_chunk_size: int = 8192
     entropy_coef: float = 0.01
+    init_noise_std: float = 1.0
+    log_std_min: float = -20.0
+    log_std_max: float = 2.0
     max_grad_norm: float = 0.5
     device: str = "cpu"
     fixed_order: bool = True
+    use_happo_factor: bool = True
+    share_actor: bool = False
+    actor_update_mode: str = "ppo"
+    trpo_kl_threshold: float = 0.01
+    trpo_cg_iters: int = 10
+    trpo_damping: float = 0.1
+    trpo_line_search_steps: int = 10
+    trpo_accept_ratio: float = 0.5
+    trpo_backtrack_coeff: float = 0.8
 
 
 class PlatoonHAPPORunner:
@@ -52,8 +65,18 @@ class PlatoonHAPPORunner:
             ppo_epoch=cfg.ppo_epoch,
             actor_num_mini_batch=cfg.num_mini_batches,
             entropy_coef=cfg.entropy_coef,
+            init_noise_std=cfg.init_noise_std,
+            log_std_min=cfg.log_std_min,
+            log_std_max=cfg.log_std_max,
             lr=cfg.actor_lr,
             max_grad_norm=cfg.max_grad_norm,
+            update_mode=cfg.actor_update_mode,
+            trpo_kl_threshold=cfg.trpo_kl_threshold,
+            trpo_cg_iters=cfg.trpo_cg_iters,
+            trpo_damping=cfg.trpo_damping,
+            trpo_line_search_steps=cfg.trpo_line_search_steps,
+            trpo_accept_ratio=cfg.trpo_accept_ratio,
+            trpo_backtrack_coeff=cfg.trpo_backtrack_coeff,
         )
         critic_cfg = HAPPOCriticCfg(
             share_obs_dim=cfg.share_obs_dim,
@@ -75,7 +98,11 @@ class PlatoonHAPPORunner:
             gae_lambda=cfg.gae_lambda,
             device=cfg.device,
         )
-        self.actors = [HAPPOActor(actor_cfg, self.device) for _ in range(cfg.num_agents)]
+        if cfg.share_actor:
+            shared_actor = HAPPOActor(actor_cfg, self.device)
+            self.actors = [shared_actor for _ in range(cfg.num_agents)]
+        else:
+            self.actors = [HAPPOActor(actor_cfg, self.device) for _ in range(cfg.num_agents)]
         self.critic = HAPPOCritic(critic_cfg, self.device)
         self.buffer = HAPPORolloutBuffer(buffer_cfg)
 
@@ -103,6 +130,15 @@ class PlatoonHAPPORunner:
         advantages = (advantages - advantages.mean()) / (advantages.std().clamp_min(1.0e-5))
 
         factor = torch.ones((self.cfg.episode_length, self.cfg.num_envs, 1), device=self.device)
+        if self.cfg.share_actor and not self.cfg.use_happo_factor:
+            actor_info = self.actors[0].train_shared_on_buffer(self.buffer, advantages, factor)
+            actor_train_infos = [dict(actor_info) for _ in range(self.cfg.num_agents)]
+            critic_train_info = self.critic.train_on_buffer(self.buffer)
+            self.buffer.after_update()
+            if self.device.type == "cuda":
+                torch.cuda.empty_cache()
+            return actor_train_infos, critic_train_info
+
         agent_order = list(range(self.cfg.num_agents))
         if not self.cfg.fixed_order:
             agent_order = torch.randperm(self.cfg.num_agents).tolist()
@@ -110,19 +146,66 @@ class PlatoonHAPPORunner:
         actor_train_infos: list[dict[str, float]] = []
         for agent_id in agent_order:
             with torch.no_grad():
-                obs = self.buffer.obs[:-1, :, agent_id].reshape(-1, self.cfg.obs_dim)
-                actions = self.buffer.actions[:, :, agent_id].reshape(-1, self.cfg.act_dim)
-                old_log_probs, _ = self.actors[agent_id].evaluate_actions(obs, actions)
+                old_log_probs = self.buffer.action_log_probs[:, :, agent_id].reshape(-1, 1)
             actor_info = self.actors[agent_id].train_on_buffer(self.buffer, advantages, agent_id, factor)
-            with torch.no_grad():
-                new_log_probs, _ = self.actors[agent_id].evaluate_actions(obs, actions)
-                ratio = torch.exp(new_log_probs - old_log_probs).reshape(self.cfg.episode_length, self.cfg.num_envs, 1)
-                factor = factor * ratio
+            if self.cfg.use_happo_factor:
+                with torch.no_grad():
+                    new_log_probs = self._evaluate_actor_log_probs_chunked(agent_id)
+                    ratio = torch.exp(torch.clamp(new_log_probs - old_log_probs, min=-20.0, max=20.0)).reshape(
+                        self.cfg.episode_length, self.cfg.num_envs, 1
+                    )
+                    factor = factor * ratio
             actor_train_infos.append(actor_info)
+            if self.device.type == "cuda":
+                torch.cuda.empty_cache()
 
         critic_train_info = self.critic.train_on_buffer(self.buffer)
         self.buffer.after_update()
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
         return actor_train_infos, critic_train_info
+
+    def _evaluate_actor_log_probs_chunked(self, agent_id: int) -> torch.Tensor:
+        batch_size = self.cfg.episode_length * self.cfg.num_envs
+        chunk_size = max(int(self.cfg.factor_eval_chunk_size), 1)
+        obs = self.buffer.obs[:-1, :, agent_id].reshape(batch_size, self.cfg.obs_dim)
+        actions = self.buffer.actions[:, :, agent_id].reshape(batch_size, self.cfg.act_dim)
+        log_prob_chunks: list[torch.Tensor] = []
+        actor_net = self.actors[agent_id].actor
+        for start in range(0, batch_size, chunk_size):
+            end = min(start + chunk_size, batch_size)
+            action_log_probs, _ = actor_net.evaluate_actions(obs[start:end], actions[start:end])
+            log_prob_chunks.append(action_log_probs.detach())
+        return torch.cat(log_prob_chunks, dim=0)
+
+    def state_dict(self) -> dict:
+        """Return trainable HAPPO state for checkpointing."""
+        return {
+            "cfg": dict(self.cfg.__dict__),
+            "actors": [actor.actor.state_dict() for actor in self.actors],
+            "actor_optimizers": [actor.optimizer.state_dict() for actor in self.actors],
+            "critic": self.critic.critic.state_dict(),
+            "critic_optimizer": self.critic.optimizer.state_dict(),
+        }
+
+    def load_state_dict(self, state: dict, strict: bool = True) -> None:
+        """Load trainable HAPPO state from a checkpoint."""
+        actors = state.get("actors", [])
+        if len(actors) != len(self.actors):
+            raise ValueError(f"HAPPO actor count mismatch: got {len(actors)}, expected {len(self.actors)}")
+        for actor, actor_state in zip(self.actors, actors):
+            actor.actor.load_state_dict(actor_state, strict=strict)
+
+        actor_optimizers = state.get("actor_optimizers", [])
+        if len(actor_optimizers) == len(self.actors):
+            for actor, optimizer_state in zip(self.actors, actor_optimizers):
+                actor.optimizer.load_state_dict(optimizer_state)
+
+        if "critic" not in state:
+            raise ValueError("HAPPO checkpoint is missing critic state.")
+        self.critic.critic.load_state_dict(state["critic"], strict=strict)
+        if "critic_optimizer" in state:
+            self.critic.optimizer.load_state_dict(state["critic_optimizer"])
 
     def prep_rollout(self) -> None:
         for actor in self.actors:

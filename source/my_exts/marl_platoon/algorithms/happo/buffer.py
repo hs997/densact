@@ -114,6 +114,45 @@ class HAPPORolloutBuffer:
                 "factor": factor_flat[mb_inds].clone(),
             }
 
+    def actor_full_batch(self, agent_id: int, advantages: torch.Tensor, factor: torch.Tensor):
+        batch_size = self.cfg.episode_length * self.cfg.num_envs
+        return {
+            "obs": self.obs[:-1, :, agent_id].reshape(batch_size, self.cfg.obs_dim).clone(),
+            "actions": self.actions[:, :, agent_id].reshape(batch_size, self.cfg.act_dim).clone(),
+            "old_action_log_probs": self.action_log_probs[:, :, agent_id].reshape(batch_size, 1).clone(),
+            "advantages": advantages[:, :, agent_id].reshape(batch_size, 1).clone(),
+            "active_masks": self.active_masks[:-1, :, agent_id].reshape(batch_size, 1).clone(),
+            "factor": factor.reshape(batch_size, 1).clone(),
+        }
+
+    def shared_actor_minibatches(
+        self,
+        advantages: torch.Tensor,
+        factor: torch.Tensor,
+        num_mini_batches: int,
+    ):
+        batch_size = self.cfg.episode_length * self.cfg.num_envs * self.cfg.num_agents
+        mini_batch_size = max(batch_size // num_mini_batches, 1)
+        indices = torch.randperm(batch_size, device=self.device)
+
+        obs = self.obs[:-1].reshape(batch_size, self.cfg.obs_dim)
+        actions = self.actions.reshape(batch_size, self.cfg.act_dim)
+        old_log_probs = self.action_log_probs.reshape(batch_size, 1)
+        adv = advantages.reshape(batch_size, 1)
+        masks = self.active_masks[:-1].reshape(batch_size, 1)
+        shared_factor = factor.unsqueeze(2).expand(-1, -1, self.cfg.num_agents, -1).reshape(batch_size, 1)
+
+        for start in range(0, batch_size, mini_batch_size):
+            mb_inds = indices[start : start + mini_batch_size]
+            yield {
+                "obs": obs[mb_inds].clone(),
+                "actions": actions[mb_inds].clone(),
+                "old_action_log_probs": old_log_probs[mb_inds].clone(),
+                "advantages": adv[mb_inds].clone(),
+                "active_masks": masks[mb_inds].clone(),
+                "factor": shared_factor[mb_inds].clone(),
+            }
+
     def critic_minibatches(self, num_mini_batches: int):
         batch_size = self.cfg.episode_length * self.cfg.num_envs
         mini_batch_size = max(batch_size // num_mini_batches, 1)

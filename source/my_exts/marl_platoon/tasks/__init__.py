@@ -57,6 +57,14 @@ class PlatoonHAPPOEnvCfg(PlatoonEnvCfg):
 
         # HAPPO baseline knobs
         self.algorithm.happo_use_factor = True
+        self.algorithm.happo_share_actor = False
+        self.algorithm.happo_actor_update_mode = "ppo"
+        self.algorithm.happo_trpo_kl_threshold = 0.01
+        self.algorithm.happo_trpo_cg_iters = 10
+        self.algorithm.happo_trpo_damping = 0.1
+        self.algorithm.happo_trpo_line_search_steps = 10
+        self.algorithm.happo_trpo_accept_ratio = 0.5
+        self.algorithm.happo_trpo_backtrack_coeff = 0.8
         self.algorithm.happo_actor_lr = 1.0e-5
         self.algorithm.happo_critic_lr = 1.0e-5
         self.algorithm.happo_clip_param = 0.05
@@ -86,11 +94,29 @@ class PlatoonHAPPOEnvCfg(PlatoonEnvCfg):
         self.algorithm.happo_log_level = "basic"
 
         # Teacher baseline knobs
-        self.algorithm.teacher_shaping_coef = 0.001
-        self.algorithm.teacher_lr = 1.0e-4
-        self.algorithm.teacher_update_interval = 5
-        self.algorithm.teacher_shaping_clip = 0.03
-        self.algorithm.teacher_action_penalty_coef = 0.0
+        self.algorithm.teacher_shaping_coef = 0.02
+        self.algorithm.teacher_lr = 3.0e-4
+        self.algorithm.teacher_update_interval = 1
+        self.algorithm.teacher_every_student_updates = 2
+        self.algorithm.teacher_shaping_clip = 0.20
+        self.algorithm.teacher_action_penalty_coef = 0.001
+        self.algorithm.teacher_reward_ema_tau = 0.95
+        self.algorithm.teacher_consistency_coef = 0.03
+        self.algorithm.teacher_outer_delta_coef = 0.08
+        self.algorithm.teacher_outer_delta_warmup_updates = 5
+        self.algorithm.teacher_outer_delta_ramp_updates = 20
+        self.algorithm.teacher_lambda_spacing = 1.0
+        self.algorithm.teacher_lambda_velocity = 0.5
+        self.algorithm.teacher_lambda_acceleration = 0.25
+        self.algorithm.teacher_lambda_jerk = 0.10
+        self.algorithm.teacher_lambda_overspeed = 0.25
+        self.algorithm.teacher_lambda_centerline = 1.0
+        self.algorithm.teacher_lambda_lateral = 0.5
+        self.algorithm.teacher_lambda_heading = 2.0
+        self.algorithm.teacher_lambda_backward = 1.0
+        self.algorithm.teacher_lambda_forward_deficit = 0.5
+        self.algorithm.teacher_lambda_collision = 10.0
+        self.algorithm.teacher_lambda_action_energy = 0.02
 
 # Stable PPO baseline entry.
 gym.register(

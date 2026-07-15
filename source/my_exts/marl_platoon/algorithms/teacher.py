@@ -41,6 +41,7 @@ class RewardTeacherCfg:
     lambda_acceleration: float = 0.25
     lambda_jerk: float = 0.10
     lambda_overspeed: float = 0.25
+    lambda_centerline: float = 1.0
     lambda_lateral: float = 0.5
     lambda_heading: float = 2.0
     lambda_backward: float = 1.0
@@ -124,6 +125,7 @@ class RewardTeacherModule(TeacherModule):
         jerk_metric = torch.zeros_like(spacing_metric)
         overspeed_metric = torch.zeros_like(spacing_metric)
         lateral_metric = torch.zeros_like(spacing_metric)
+        centerline_metric = torch.zeros_like(spacing_metric)
         heading_metric = torch.zeros_like(spacing_metric)
         backward_metric = torch.zeros_like(spacing_metric)
         forward_deficit_metric = torch.zeros_like(spacing_metric)
@@ -152,6 +154,12 @@ class RewardTeacherModule(TeacherModule):
         for idx, name in enumerate(self.robots[:num_agents]):
             robot = self.env.scene[name]
             speed_x = robot.data.root_lin_vel_b[:, 0].to(self.device)
+            root_pos = robot.data.root_pos_w.to(self.device)
+            if hasattr(self.env.scene, "env_origins"):
+                centerline_y = root_pos[:, 1] - self.env.scene.env_origins.to(self.device)[:, 1]
+            else:
+                centerline_y = root_pos[:, 1]
+            centerline_i = centerline_y.pow(2)
             heading_vec = torch.nn.functional.normalize(
                 torch.nan_to_num(robot.data.root_quat_w.to(self.device), nan=0.0), dim=-1
             )
@@ -161,10 +169,12 @@ class RewardTeacherModule(TeacherModule):
             backward_i = torch.relu(-speed_x).pow(2)
             forward_deficit_i = torch.relu(target_speed.squeeze(1) - speed_x).pow(2)
             physical_cost[:, idx] = physical_cost[:, idx] + (
-                self.cfg.lambda_heading * heading_i
+                self.cfg.lambda_centerline * centerline_i
+                + self.cfg.lambda_heading * heading_i
                 + self.cfg.lambda_backward * backward_i
                 + self.cfg.lambda_forward_deficit * forward_deficit_i
             )
+            centerline_metric = centerline_metric + centerline_i
             heading_metric = heading_metric + heading_i
             backward_metric = backward_metric + backward_i
             forward_deficit_metric = forward_deficit_metric + forward_deficit_i
@@ -231,6 +241,7 @@ class RewardTeacherModule(TeacherModule):
             "physical_acceleration_cost": float((acceleration_metric / pair_count).mean().item()),
             "physical_jerk_cost": float(((jerk_metric / pair_count) + action_jerk.mean(dim=1)).mean().item()),
             "physical_overspeed_cost": float((overspeed_metric / pair_count).mean().item()),
+            "physical_centerline_cost": float((centerline_metric / float(max(num_agents, 1))).mean().item()),
             "physical_lateral_cost": float((lateral_metric / pair_count).mean().item()),
             "physical_heading_cost": float((heading_metric / float(max(num_agents, 1))).mean().item()),
             "physical_backward_cost": float((backward_metric / float(max(num_agents, 1))).mean().item()),

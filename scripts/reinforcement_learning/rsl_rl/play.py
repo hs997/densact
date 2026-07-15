@@ -49,6 +49,17 @@ parser.add_argument(
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument(
+    "--export_ros_replay",
+    action="store_true",
+    help="Export env_id=0, per-robot executable control trajectory CSV for ROS replay.",
+)
+parser.add_argument(
+    "--ros_replay_path",
+    type=str,
+    default=None,
+    help="Output CSV path used with --export_ros_replay. Defaults to <log_dir>/ros_replay.csv.",
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -92,6 +103,7 @@ import isaaclab_tasks  # noqa: F401
 import marl_platoon.tasks
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
+from ros_replay_exporter import RosReplayExporter
 
 # PLACEHOLDER: Extension template (do not remove this comment)
 
@@ -210,6 +222,20 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
     runner.load(resume_path)
     _configure_happo_play(env, resume_path)
+    happo_wrapper = _find_happo_wrapper(env)
+    ros_exporter = None
+    if args_cli.export_ros_replay:
+        if happo_wrapper is None:
+            raise RuntimeError("Could not find task-local HAPPO wrapper for ROS replay export.")
+        ros_replay_path = args_cli.ros_replay_path or os.path.join(log_dir, "ros_replay.csv")
+        ros_exporter = RosReplayExporter(
+            env=env,
+            happo_wrapper=happo_wrapper,
+            csv_path=ros_replay_path,
+            checkpoint=str(resume_path),
+            task=args_cli.task or task_name,
+        )
+        print(f"[INFO] ROS replay CSV export enabled: {ros_exporter.csv_path}")
 
     # obtain the trained policy for inference
     policy = runner.get_inference_policy(device=env.unwrapped.device)
@@ -241,30 +267,35 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # reset environment
     obs = env.get_observations()
     timestep = 0
-    # simulate environment
-    while simulation_app.is_running():
-        start_time = time.time()
-        # run everything in inference mode
-        with torch.inference_mode():
-            # agent stepping
-            actions = policy(obs)
-            # env stepping
-            obs, _, dones, _ = env.step(actions)
-            # reset recurrent states for episodes that have terminated
-            policy_nn.reset(dones)
-        if args_cli.video:
-            timestep += 1
-            # Exit the play loop after recording one video
-            if timestep == args_cli.video_length:
-                break
+    try:
+        # simulate environment
+        while simulation_app.is_running():
+            start_time = time.time()
+            # run everything in inference mode
+            with torch.inference_mode():
+                # agent stepping
+                actions = policy(obs)
+                # env stepping
+                obs, _, dones, _ = env.step(actions)
+                if ros_exporter is not None:
+                    ros_exporter.export_step()
+                # reset recurrent states for episodes that have terminated
+                policy_nn.reset(dones)
+            if args_cli.video:
+                timestep += 1
+                # Exit the play loop after recording one video
+                if timestep == args_cli.video_length:
+                    break
 
-        # time delay for real-time evaluation
-        sleep_time = dt - (time.time() - start_time)
-        if args_cli.real_time and sleep_time > 0:
-            time.sleep(sleep_time)
-
-    # close the simulator
-    env.close()
+            # time delay for real-time evaluation
+            sleep_time = dt - (time.time() - start_time)
+            if args_cli.real_time and sleep_time > 0:
+                time.sleep(sleep_time)
+    finally:
+        if ros_exporter is not None:
+            ros_exporter.close()
+        # close the simulator
+        env.close()
 
 
 if __name__ == "__main__":

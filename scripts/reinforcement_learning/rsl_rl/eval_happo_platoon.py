@@ -41,9 +41,25 @@ parser.add_argument("--eval_steps", type=int, default=600)
 parser.add_argument("--warmup_steps", type=int, default=100)
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument(
+    "--fresh_env_per_checkpoint",
+    action="store_true",
+    help="Recreate the IsaacLab environment for each checkpoint so eval order cannot leak state.",
+)
+parser.add_argument(
     "--enable_attack_eval",
     action="store_true",
     help="Keep the task attack configuration active during evaluation. By default eval disables attacks.",
+)
+parser.add_argument(
+    "--export_ros_replay",
+    action="store_true",
+    help="Export env_id=0, per-robot executable control trajectory CSV for ROS replay.",
+)
+parser.add_argument(
+    "--ros_replay_path",
+    type=str,
+    default=None,
+    help="Output CSV path used with --export_ros_replay. Defaults to <output_dir>/ros_replay.csv.",
 )
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
@@ -60,6 +76,7 @@ import isaaclab_tasks  # noqa: F401
 import marl_platoon.tasks  # noqa: F401
 from isaaclab.envs import DirectMARLEnv, DirectMARLEnvCfg, DirectRLEnvCfg, ManagerBasedRLEnvCfg, multi_agent_to_single_agent
 from isaaclab_tasks.utils.hydra import hydra_task_config
+from ros_replay_exporter import RosReplayExporter
 
 
 def _find_happo_wrapper(env):
@@ -250,12 +267,77 @@ def _print_summary(summary: dict[str, Any]) -> None:
     )
 
 
+def _make_eval_env(env_cfg):
+    env = gym.make(args_cli.task, cfg=env_cfg, render_mode=None)
+    if isinstance(env.unwrapped, DirectMARLEnv):
+        env = multi_agent_to_single_agent(env)
+    happo_wrapper = _find_happo_wrapper(env)
+    if happo_wrapper is None:
+        env.close()
+        raise RuntimeError("Could not find task-local HAPPO wrapper.")
+
+    act_dim = _action_dim(env)
+    device = env.unwrapped.device
+    zero_actions = torch.zeros((env.unwrapped.num_envs, act_dim), device=device)
+    return env, happo_wrapper, zero_actions
+
+
+def _evaluate_checkpoint(
+    env,
+    happo_wrapper,
+    zero_actions,
+    checkpoint_path: Path,
+    ros_replay_path: Path | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    env.reset()
+    _load_task_happo_state(
+        happo_wrapper,
+        checkpoint_path,
+        disable_attack=not bool(args_cli.enable_attack_eval),
+    )
+    router = happo_wrapper.algorithm_router
+    ros_exporter = None
+    if ros_replay_path is not None:
+        ros_exporter = RosReplayExporter(
+            env=env,
+            happo_wrapper=happo_wrapper,
+            csv_path=ros_replay_path,
+            checkpoint=str(checkpoint_path),
+            task=args_cli.task,
+        )
+    rows: list[dict[str, Any]] = []
+    try:
+        for step_idx in range(int(args_cli.eval_steps)):
+            # Do not use torch.inference_mode() around IsaacLab env.step().
+            # Reset writes into internal tensors after each checkpoint; inference tensors
+            # can make those in-place updates fail.
+            with torch.no_grad():
+                _, rew, terminated, truncated, _ = env.step(zero_actions)
+            if ros_exporter is not None:
+                ros_exporter.export_step()
+            dones = torch.logical_or(terminated, truncated)
+            row = _collect_eval_metrics(router, rew, dones)
+            row["eval_step"] = step_idx + 1
+            row["checkpoint"] = checkpoint_path.name
+            rows.append(row)
+            if not simulation_app.is_running():
+                break
+    finally:
+        if ros_exporter is not None:
+            ros_exporter.close()
+
+    summary = _summarize(checkpoint_path, rows, int(args_cli.warmup_steps))
+    return rows, summary
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg):
     checkpoint_paths = [Path(item).expanduser().resolve() for item in args_cli.eval_checkpoints.split(",") if item.strip()]
     missing = [str(path) for path in checkpoint_paths if not path.exists()]
     if missing:
         raise FileNotFoundError(f"Missing checkpoint(s): {missing}")
+    if args_cli.export_ros_replay and len(checkpoint_paths) != 1:
+        raise ValueError("--export_ros_replay expects exactly one checkpoint in --eval_checkpoints.")
 
     env_cfg.scene.num_envs = int(args_cli.num_envs)
     env_cfg.seed = int(args_cli.seed)
@@ -267,51 +349,58 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         output_dir = Path(args_cli.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     env_cfg.log_dir = str(output_dir)
+    ros_replay_path = None
+    if args_cli.export_ros_replay:
+        ros_replay_path = (
+            Path(args_cli.ros_replay_path).expanduser().resolve()
+            if args_cli.ros_replay_path
+            else output_dir / "ros_replay.csv"
+        )
 
-    env = gym.make(args_cli.task, cfg=env_cfg, render_mode=None)
-    if isinstance(env.unwrapped, DirectMARLEnv):
-        env = multi_agent_to_single_agent(env)
-    happo_wrapper = _find_happo_wrapper(env)
-    if happo_wrapper is None:
-        raise RuntimeError("Could not find task-local HAPPO wrapper.")
-
-    act_dim = _action_dim(env)
-    device = env.unwrapped.device
-    zero_actions = torch.zeros((env.unwrapped.num_envs, act_dim), device=device)
     all_summaries: list[dict[str, Any]] = []
 
-    try:
+    if args_cli.fresh_env_per_checkpoint:
         for checkpoint_path in checkpoint_paths:
-            env.reset()
-            _load_task_happo_state(
-                happo_wrapper,
-                checkpoint_path,
-                disable_attack=not bool(args_cli.enable_attack_eval),
-            )
-            router = happo_wrapper.algorithm_router
-            rows: list[dict[str, Any]] = []
-            for step_idx in range(int(args_cli.eval_steps)):
-                # Do not use torch.inference_mode() around IsaacLab env.step().
-                # Reset writes into internal tensors after each checkpoint; inference tensors
-                # can make those in-place updates fail.
-                with torch.no_grad():
-                    _, rew, terminated, truncated, _ = env.step(zero_actions)
-                dones = torch.logical_or(terminated, truncated)
-                row = _collect_eval_metrics(router, rew, dones)
-                row["eval_step"] = step_idx + 1
-                row["checkpoint"] = checkpoint_path.name
-                rows.append(row)
-                if not simulation_app.is_running():
-                    break
+            env = None
+            try:
+                env, happo_wrapper, zero_actions = _make_eval_env(env_cfg)
+                rows, summary = _evaluate_checkpoint(
+                    env,
+                    happo_wrapper,
+                    zero_actions,
+                    checkpoint_path,
+                    ros_replay_path=ros_replay_path,
+                )
+            finally:
+                if env is not None:
+                    env.close()
 
             step_csv = output_dir / f"eval_steps_{checkpoint_path.stem}.csv"
             _write_csv(step_csv, rows)
-            summary = _summarize(checkpoint_path, rows, int(args_cli.warmup_steps))
             summary["step_csv"] = str(step_csv)
             all_summaries.append(summary)
             _print_summary(summary)
-    finally:
-        env.close()
+    else:
+        env = None
+        try:
+            env, happo_wrapper, zero_actions = _make_eval_env(env_cfg)
+            for checkpoint_path in checkpoint_paths:
+                rows, summary = _evaluate_checkpoint(
+                    env,
+                    happo_wrapper,
+                    zero_actions,
+                    checkpoint_path,
+                    ros_replay_path=ros_replay_path,
+                )
+
+                step_csv = output_dir / f"eval_steps_{checkpoint_path.stem}.csv"
+                _write_csv(step_csv, rows)
+                summary["step_csv"] = str(step_csv)
+                all_summaries.append(summary)
+                _print_summary(summary)
+        finally:
+            if env is not None:
+                env.close()
 
     summary_csv = output_dir / "eval_summary.csv"
     _write_csv(summary_csv, all_summaries)

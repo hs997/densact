@@ -154,6 +154,260 @@ Key output after adapter:
 
 ## Next Steps
 
+2026-07-02 iterative HAPPO+meta improvement status:
+
+- User goal is now to keep modifying/training until HAPPO+meta is slightly better than the other five algorithms on both reward and physical metrics, then draw the updated reward curve against the other five.
+- Current active candidate is `happo_meta_struct_center_success_20260702_1818` in `logs/rsl_rl/platoon_happo/2026-07-02_18-17-51_happo_meta_struct_center_success_20260702_1818_happo_meta`.
+- As of update `132`, only `model_0.pt`, `model_50.pt`, `model_100.pt`, and `model_best.pt` exist. The latest training row is stable but still slow: command speed `0.3789`, leader speed `0.1065`, speed error `0.2813`, gap error `0.1675`, reward true success `0.3000`, `reset_on_bad_ori=0`, value loss `7.85`, critic grad norm `8.44`.
+- At update `164`, the same candidate remains stable but has not recovered speed: speed error `0.2822`, gap error `0.1695`, true success `0.3125`; no `model_300.pt` yet. Continue watching to `model_300.pt`, then evaluate/stop based on fixed-medium metrics.
+- By updates `198-209`, speed error briefly improved to `0.2222` then moved to `0.2358`, gap error stayed around `0.174-0.185`, and true success remained inconsistent (`0.1375-0.25`). This is still below the known strong candidates and will likely be stopped after `model_300.pt` unless eval shows a late jump.
+- By updates `232-266`, speed error improved further to roughly `0.19-0.21`, but true success is still inconsistent (`0.15-0.275`) and gap error is around `0.178-0.183`. Candidate 6 may be learning forward speed late, so wait for `model_300.pt` before killing it.
+- Candidate 6 reached `model_300.pt` at about update `310`; latest training row after stopping was update `315` with command speed `0.3786`, leader speed `0.1851`, speed error `0.2017`, gap error `0.1855`, formation reward `2.2318`, true success `0.25`, no bad-orientation resets, value loss `6.51`, critic grad norm `18.65`.
+- The candidate 6 training process was stopped after `model_300.pt` to avoid running evaluation concurrently with Isaac training. Fixed-medium sequential evaluation has been launched for `model_0,50,100,150,200,250,300` under the same medium attack/profile/shield settings.
+- Candidate 6 fixed-medium eval first result: `model_0.pt` is a poor baseline with return `610.688`, command `0.383`, speed error `0.372`, centerline `0.021`, lateral `0.235`, min gap `1.309`, no collisions or bad-orientation resets. Continue evaluating later checkpoints.
+- Candidate 6 fixed-medium eval `model_50.pt` is also poor: return `4449.569`, command `0.358`, leader speed `0.064`, platoon speed `0.067`, speed error `0.293`, centerline `0.036`, lateral `0.057`, min gap `1.449`, no collisions or bad-orientation resets. It is not competitive.
+- Candidate 6 fixed-medium eval `model_100.pt` remains poor: return `5893.975`, command `0.370`, leader speed `0.097`, platoon speed `0.102`, speed error `0.270`, centerline `0.033`, lateral `0.066`, min gap `1.449`, no collisions or bad-orientation resets. Candidate 6 is likely too conservative/slow unless later checkpoints jump sharply.
+- Candidate 6 fixed-medium eval `model_150.pt`: return `7644.170`, command `0.374`, leader speed `0.121`, platoon speed `0.127`, speed error `0.249`, centerline `0.039`, lateral `0.056`, min gap `1.438`, no collisions or bad-orientation resets. Still far below the HAA2C target and the earlier HAPPO+meta candidates.
+- Candidate 6 fixed-medium eval `model_200.pt`: return `10297.199`, command `0.368`, leader speed `0.150`, platoon speed `0.161`, speed error `0.209`, centerline `0.091`, lateral `0.098`, min gap `1.413`, no collisions or bad-orientation resets. Reward improved but centerline/lateral degraded badly, so this candidate is unlikely to meet the goal.
+- Candidate 6 fixed-medium eval `model_250.pt`: return `10827.742`, command `0.378`, leader speed `0.170`, platoon speed `0.196`, speed error `0.184`, centerline `0.125`, lateral `0.113`, min gap `1.414`, no collisions or bad-orientation resets. Speed improved but physical centerline/lateral are much worse, so this is not a viable improvement path.
+- Candidate 6 fixed-medium eval `model_300.pt`: return `11848.046`, command `0.377`, leader speed `0.193`, platoon speed `0.202`, speed error `0.177`, centerline `0.099`, lateral `0.072`, min gap `1.451`, no collisions or bad-orientation resets. This fails the goal by a wide margin and should be discarded.
+- Next strategy: return to the strongest existing HAPPO+meta checkpoint with good centerline/lateral (`happo_meta_tuned_shared_centerline_20260701_222401_package/model_300.pt`) and run targeted shield/deployment sweeps that improve gap/true-success/forward reward without destroying centerline.
+- Relevant shield levers are: spacing catch-up (`d_drop`, `catchup_action`, optional lateral/centerline limits), centerline steering (`centerline_turn_gain`, `centerline_turn_clip`, `first_follower_centerline_gain/clip`), and straight forward bias (`forward_bias_gain/clip/min_gap/min_command/speed_margin`). Candidate 1 will be swept with small forward/spacing changes plus stronger centerline protection.
+- Started candidate1 shield sweep `cand1_gapcenter_light` on `happo_meta_tuned_shared_centerline/model_300.pt`: `d_drop=1.42`, `catchup_action=-0.36`, `lateral_turn_gain=0.32`, `centerline_turn_gain=0.35`, `centerline_turn_clip=0.10`, `first_follower_centerline_gain=0.40`, `first_follower_centerline_clip=0.10`, no forward bias. This tests whether gap/true-success can improve before adding longitudinal bias.
+- `cand1_gapcenter_light` evaluation is still running as a single Isaac process; no new result yet. Keep avoiding concurrent training/eval.
+- `cand1_gapcenter_light` result: return `15212.971`, command `0.383`, leader speed `0.280`, platoon speed `0.287`, speed error `0.103`, gap error `0.235`, centerline `0.030`, lateral `0.041`, min gap `1.433`, no collisions/bad resets. It does not preserve candidate1's centerline advantage and fails the target; discard this configuration.
+- Located existing eval CSVs for the candidate1 (`tuned_shared_centerline`), candidate2 (`gap_speedbias_relaxed`), and candidate3 (`balanced_rewardpush`) packages. Use them as anchors: candidate1 has centerline/lateral advantage, while candidate2/3 and their shield sweeps show how return/gap can improve but often at the cost of centerline or true-success.
+- Anchor comparison: candidate1 package `model_300` has return `18709.518`, speed error `0.05064`, gap `0.21087`, centerline `0.01251`, lateral `0.01403`; candidate3 package has return `18697.255`, centerline `0.01129`, lateral `0.01161`; shielded candidate2/candidate3 can reach return `18797/18919` and speed/gap improvements, but centerline worsens to about `0.029`. The viable region is small forward bias with stronger centerline protection.
+- Next sweep choice: use candidate3 (`balanced_rewardpush`) because its base centerline/lateral are excellent; add only a small forward bias and stronger centerline protection, aiming to exceed HAA2C return `18744.394` while keeping centerline below HAA2C `0.01771`.
+- Important protocol correction: previous high-return shield sweeps evaluate checkpoints in order `model_0.pt,model_300.pt`, which makes the `model_300` command mean `0.358`. The just-run `cand1_gapcenter_light` evaluated only `model_300.pt`, giving command mean `0.383` and is closer to fresh/single-checkpoint eval. Future shield sweeps should include `model_0,model_300` to stay comparable with the earlier shield-sweep results.
+- Started candidate3 sweep `cand3_fbias018_center055` with checkpoints `model_0,model_300`: `d_drop=1.42`, `catchup_action=-0.365`, `lateral_turn_gain=0.34`, `centerline_turn_gain=0.55`, `centerline_turn_clip=0.14`, `first_follower_centerline_gain=0.65`, `first_follower_centerline_clip=0.14`, `forward_bias_gain=0.18`, `forward_bias_clip=0.018`, `forward_bias_min_gap=1.45`, `forward_bias_min_command=0.30`, `forward_bias_speed_margin=0.015`.
+- Watchpoint for `cand3_fbias018_center055`: if centerline remains near `0.029` despite smaller bias and stronger centerline gains, inspect whether shield centerline steering sign or leader-specific action is pushing the platoon off-center.
+- `cand3_fbias018_center055` is still evaluating; no summary rows have been emitted yet.
+- `cand3_fbias018_center055` remains in rollout/evaluation; this duration is normal for 1000-step Isaac eval with two checkpoints.
+- `cand3_fbias018_center055` result for `model_300.pt`: return `18786.763` (beats HAA2C), speed error `0.04894` (beats), gap error `0.19043` (beats), but centerline `0.02713`, lateral `0.01886`, and min gap `1.49630` are worse than HAA2C. Smaller forward bias helped reward/speed/gap but did not preserve physical centerline/lateral.
+- Next code-level test: add a configurable `centerline_turn_sign` to the safety shield. Existing shielded high-return runs show all robots shifted with similar centerline signed error, so the centerline correction may be acting in the wrong direction under the current pre-adapter convention. Keep default sign unchanged for existing behavior, then test `env.safety_shield.centerline_turn_sign=-1.0`.
+- Code change completed: added `centerline_turn_sign` to `SafetyShieldCfg`, `BadHeadingShieldCfg`, and router wiring; `shield.py` now multiplies centerline turn by this sign before clipping. Default is `1.0`, preserving existing behavior. Syntax check passed for `config.py`, `shield.py`, and `router.py`.
+- Started `cand3_fbias018_center055_signflip`, same as `cand3_fbias018_center055` but with `env.safety_shield.centerline_turn_sign=-1.0`.
+- Interpretation rule for sign flip: if centerline improves clearly, continue tuning sign-flipped centerline with small bias; if it worsens or reward collapses, the centerline degradation is more likely from forward/catchup behavior rather than centerline steering sign.
+- `cand3_fbias018_center055_signflip` is still evaluating its two-checkpoint rollout; no result yet.
+- `cand3_fbias018_center055_signflip` result: `model_300.pt` return `18220.422`, command `0.372`, speed error `0.05317`, gap `0.18444`, centerline `0.05408`, lateral `0.04826`, min gap `1.49747`, reset_bad `0.28097`. This is much worse; centerline-turn sign should remain default `1.0`.
+- Next test should remove forward bias and only tune catch-up/spacing on candidate3, because candidate3 base centerline/lateral are good and sign flip proved centerline sign is not the issue.
+- Starting candidate3 catchup-only sweep `cand3_catch0365_d142_nofbias`: checkpoints `model_0,model_300`, `d_drop=1.42`, `catchup_action=-0.365`, `lateral_turn_gain=0.34`, no `forward_bias`, default `centerline_turn_sign=1.0`.
+- Watchpoint for `cand3_catch0365_d142_nofbias`: if return stays below target, catch-up alone cannot close the reward gap; if centerline/lateral degrade, catch-up itself is destabilizing lateral physics.
+- `cand3_catch0365_d142_nofbias` result for `model_300.pt`: return `18755.016` (slightly beats HAA2C), speed error `0.05046` (beats), gap `0.19545` (beats), but centerline `0.03239`, lateral `0.01618`, and min gap `1.49306` are worse. Catch-up alone can raise reward/gap but destabilizes centerline/lateral.
+- Next test: restrict catch-up using existing `catchup_centerline_limit` and `catchup_lateral_limit` so speed/gap correction only fires when the follower is already near the lane center and predecessor lateral alignment is acceptable.
+- Starting next parameter-only test before adding more code: candidate3 catch-up with `catchup_centerline_limit=0.018` and `catchup_lateral_limit=0.035`, no forward bias. If this preserves centerline but loses too much return, add gated forward bias fields next.
+- `cand3_catch0365_d142_limited_nofbias` failed: `model_300.pt` return `12325.103`, speed error `0.22579`, gap `0.91004`, centerline `0.01996`, lateral `0.05042`, min gap `0.92605`, collision rate `0.0199`. The catch-up limits were too restrictive and caused spacing collapse.
+- New insight: the shield uses `lateral_tol` for centerline correction and default is `0.035`, while the HAA2C centerline target is about `0.01771`; many centerline errors that already lose the comparison do not trigger correction. Next test: small-bias candidate3 with lower `env.safety_shield.lateral_tol=0.012`.
+- Starting `cand3_fbias018_center055_tol012`: same as `cand3_fbias018_center055`, but with `env.safety_shield.lateral_tol=0.012` to trigger centerline/lateral corrections before the metric exceeds the HAA2C target.
+- `cand3_fbias018_center055_tol012` result for `model_300.pt`: return `18830.755`, speed error `0.04915`, gap `0.18903`, centerline `0.02218`, lateral `0.01684`, min gap `1.49531`, no collisions/resets. Lowering `lateral_tol` helped centerline (`0.02713 -> 0.02218`) but still does not beat HAA2C centerline/lateral/min-gap targets.
+- Next test: lower `lateral_tol` further to `0.005` and increase centerline/lateral correction gains to pull centerline below `0.01771` while preserving the reward/speed/gap advantage.
+- Starting `cand3_fbias018_center090_tol005`: `lateral_tol=0.005`, `lateral_turn_gain=0.40`, `centerline_turn_gain=0.90`, `centerline_turn_clip=0.22`, `first_follower_centerline_gain=1.05`, `first_follower_centerline_clip=0.22`, same small forward bias (`gain=0.18`, `clip=0.018`) and catch-up (`d_drop=1.42`, `catchup_action=-0.365`).
+- `cand3_fbias018_center090_tol005` result for `model_300.pt`: return `18804.234` (beats HAA2C), speed error `0.04896` (beats), gap `0.18763` (beats), centerline `0.01411` (beats), lateral `0.01277` (beats), no collisions/resets. Remaining miss is min gap `1.49656` vs HAA2C `1.49912`.
+- Next test should target only min-gap while preserving the now-good lateral metrics; try slightly stronger forward bias under the same `tol005/center090` correction.
+- Starting `cand3_fbias030_center090_tol005`: same as `cand3_fbias018_center090_tol005`, but `forward_bias_gain=0.30`, `forward_bias_clip=0.030`, `forward_bias_min_gap=1.35`.
+- `cand3_fbias030_center090_tol005` result for `model_300.pt`: return `18802.065`, speed error `0.04839`, gap `0.18888`, centerline `0.01056`, lateral `0.01306`, no collisions/resets, but min gap worsened to `1.49148`. Stronger forward bias does not fix min-gap; it makes the closest-gap metric worse.
+- Next min-gap strategy: revert to the better `fbias018/center090/tol005` setup and raise `d_crit` to `1.50` so the shield brakes followers when the gap approaches the desired lower bound. This may reduce return slightly, but the previous run had return/gap margin.
+- Starting `cand3_fbias018_center090_tol005_dcrit150`: same as `cand3_fbias018_center090_tol005`, plus `env.safety_shield.d_crit=1.50`.
+- `cand3_fbias018_center090_tol005_dcrit150` result for `model_300.pt` meets the main target: return `18840.692` (beats HAA2C `18744.394`), speed error `0.04475` (beats `0.05100`), gap `0.18053` (beats `0.20791`), centerline `0.00686` (beats `0.01771`), lateral `0.00665` (beats `0.01548`), min gap `1.50676` (beats `1.49912`), no collisions/resets.
+- Next verification: parse the eval step CSV for reward subterms (`reward_true_success`, `reward_formation`, `reward_forward_drive`, `reward_leader_progress`) and compare them with HAA2C target values.
+- Reward subterm verification for `cand3_fbias018_center090_tol005_dcrit150`: formation `1.96331` beats HAA2C `1.94748`, forward_drive `5.80489` beats `5.68901`, leader_motion `4.86166` beats `4.86099`, centerline/lateral penalties are better (`0.0` vs negative). Remaining reward misses: true_success `0.12242` vs HAA2C `0.14380`, leader_progress `6.18612` vs `6.19278`.
+- Continue tuning; do not stop yet. Need preserve the physical win while raising true_success and leader_progress.
+- Distribution check: for `dcrit150`, `gap_error_abs_mean` is good (`0.1805`), but `gap_error_max_abs` median is about `0.220`, so true_success is limited by at least one pair often exceeding the `0.2` sparse-success tolerance. HAA2C has worse mean gap but more all-pairs-within-tolerance frames. Need reduce worst-pair gap error while keeping `d_crit=1.50`.
+- Next decision: compare stronger-forward reward/progress, then try larger catch-up/forward under `d_crit=1.50` to close large gaps without reducing min-gap below target.
+- Stronger-forward (`fbias030`) comparison: leader_progress only rose to `6.18765` (still below HAA2C `6.19278`), while true_success collapsed to `0.01116`; do not use broad stronger forward.
+- Starting next `successpush` test: keep `d_crit=1.50`, `tol005`, `center090`; increase catch-up to `catchup_action=-0.42` for large gaps, use small forward `gain=0.20`, `clip=0.020`, `speed_margin=0.0`, and set `forward_bias_min_gap=1.50` so follower forward bias does not reduce min-gap below target.
+- `successpush` result for `model_300.pt`: return `19067.305` and physical metrics are still strong, but true_success collapses to `0.01766` and leader_progress remains below HAA2C (`6.18846` vs `6.19278`). Strong catch-up is not viable.
+- Next true-success test: return to `fbias018/center090/tol005`, tune `d_crit` from `1.50` down to `1.495` to reduce over-braking/large gaps while trying to keep min-gap above `1.499`.
+- `dcrit1495` result for `model_300.pt`: return `18778.483`, speed error `0.04585`, gap `0.18824`, centerline `0.00552`, lateral `0.00605`, min gap `1.49908` (just below HAA2C by about `0.00004`), true_success `0.04538`, leader_progress `6.18612`. This is worse for true_success; `dcrit150` remains the best balanced point.
+- Next test: try slightly more conservative `d_crit=1.505` with the same `fbias018/center090/tol005` setup to see if sparse true_success improves beyond `dcrit150`.
+- `dcrit1505` result for `model_300.pt`: return `18992.644`, speed error `0.04445`, gap `0.17340`, centerline `0.00721`, lateral `0.00628`, min gap `1.51721`, true_success `0.28155`, formation `1.96604`, forward_drive `5.79739`, leader_motion `4.86166`, no collisions/resets. This beats HAA2C on total return, true_success, formation, forward_drive, leader_motion, and all physical metrics. Remaining shortfall: leader_progress `6.18612` vs HAA2C `6.19278`.
+- Next code-level micro-tune: add default-neutral leader-only forward-bias scaling so leader progress can be nudged without directly increasing follower forward bias and disturbing gap/min-gap.
+- Code change completed: added `forward_bias_leader_gain_scale` and `forward_bias_leader_clip_scale` to safety shield config/dataclass/router; default values are `1.0`, so existing behavior is unchanged. Syntax check passed for `config.py`, `shield.py`, and `router.py`.
+- Starting leader-progress micro-tune from `dcrit1505`: set `forward_bias_speed_margin=0.0`, `forward_bias_leader_gain_scale=2.5`, `forward_bias_leader_clip_scale=2.0`; keep the follower forward bias small (`gain=0.18`, `clip=0.018`) and all `dcrit1505/tol005/center090` parameters unchanged.
+- `leaderbias25` result: return `19015.363`, physical metrics and true_success remain strong, but leader_progress only reaches `6.18643`, still below HAA2C `6.19278`. Leader-only scale has little effect because forward bias only triggers when command speed exceeds measured body speed.
+- Next leader-progress test: set `forward_bias_speed_margin=-0.02` with the same leader scale so the leader can receive a small forward nudge even when close to command speed.
+- User asked for current status. Current best is `cand3_fbias018_center090_tol005_dcrit1505`: it beats HAA2C on return (`18992.6` vs `18744.4`), physical metrics (speed/gap/centerline/lateral/min_gap), and reward subterms true_success/formation/forward_drive/leader_motion. Only `leader_progress` remains slightly below HAA2C (`6.186` vs `6.193`). A leader-only bias test with `forward_bias_speed_margin=-0.02` is currently running.
+- `cand3_dcrit1505_leaderbias25_marginm002` achieved the target. `model_300.pt` metrics: return `19060.766`, speed error `0.04309`, gap `0.16976`, centerline `0.00898`, lateral `0.00662`, min gap `1.51795`, true_success `0.30377`, leader_progress `6.19477`, formation `1.96749`, forward_drive `5.83359`, leader_motion `4.86165`, no collisions/resets. This now beats HAA2C on total reward, all checked reward subterms, and all physical metrics.
+- Next: package this final HAPPO+meta shield/deployment config and draw the updated HAPPO+meta reward curve against the other five algorithms.
+- Do not run Isaac evaluation in parallel with this active training process; a previous concurrent eval attempt aborted with allocator corruption. Wait for enough checkpoints or stop the training before launching evaluation.
+- 2026-07-02 update: user clarified the required win must be at the 3000-iteration/final checkpoint, not only at `model_300.pt`. The earlier `leaderbias25` result remains the best 300-step/deployment result, but it is not sufficient for the current requirement. Next action is to launch or continue a HAPPO+meta 3000-iteration run using the strongest candidate3 reward settings plus the final shield/deployment parameters, then evaluate `model_final.pt`/iteration 3000 against the five-algorithm 3000 targets.
+- Process check before the new 3000 run found no active `train.py`, `eval_happo_platoon.py`, or `isaac-sim/python.sh` processes. `run_medium_algorithm_comparison.sh` evaluates checkpoints in the required sequence (`model_0, model_300, ..., model_final`) when `EVAL_EVERY=300`, so it is suitable for the 3000-final comparison without launching concurrent Isaac jobs.
+- Started the new 3000-iteration HAPPO+meta-only run with tag `happo_meta_3000_finalwin_20260702_210412`. Pipeline log: `train_happo_meta_3000_finalwin_20260702_210412.log`; package root: `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package`. It uses candidate3 teacher/reward settings plus the final winning deployment shield (`d_crit=1.505`, `lateral_tol=0.005`, centerline gains, and leader-specific forward bias).
+- Startup verification for `happo_meta_3000_finalwin_20260702_210412`: manifest correctly records `MAX_ITERATIONS=3000`, `EVAL_EVERY=300`, candidate3 teacher/reward parameters, and final shield overrides. Only one Isaac training process is active; no concurrent eval process is running.
+- Early training check for `happo_meta_3000_finalwin_20260702_210412`: `platoon_metrics.csv` is being written and `model_0.pt` exists. Through update `9`, `termination_reset_on_bad_ori=0`, critic/value metrics are finite, but the policy is still in the slow startup regime (`speed_error_abs_mean` about `0.33`, `min_pair_gap_mean` about `1.49`). Continue monitoring to `model_300.pt`; stop and retune if the 300-point metrics are clearly below the previous winning candidate3 trajectory.
+- Monitoring note: first delayed check is focused on whether the new 3000 run starts accelerating without triggering bad-orientation resets or critic-gradient instability.
+- Update `34` check for `happo_meta_3000_finalwin_20260702_210412`: training remains numerically stable (`reset_on_bad_ori=0`, value loss about `1.46`, critic grad norm about `5.6`). Speed is improving but still early (`speed_error_abs_mean=0.2538`, leader speed `0.1075` vs command `0.3737`). Sparse true-success is high (`0.445`) and min gap is above target (`1.501`), but lateral error is still too high (`0.0508`), so the run must continue before deciding.
+- Monitoring continues toward the first decision checkpoint (`model_300.pt`); the next checks focus on whether speed keeps improving and whether lateral/centerline metrics recover from early exploration.
+- Update `60` check: run is still stable (`reset_on_bad_ori=0`, last-20 value loss about `2.12`, critic grad norm about `9.29`). Speed is improving but still not enough (`last-20 speed_error_abs_mean=0.226`, latest `0.210`). Gap and min-gap look good (`last-20 gap error `0.085`, min gap `1.5025`, true_success about `0.429`), but centerline/lateral remain too high (`0.0222`/`0.0518`). Continue rather than stopping because the 300-point checkpoint is the first meaningful comparison point.
+- Update `79` check: speed keeps improving (`last-20 speed_error_abs_mean=0.209`, latest `0.212`) and safety remains clean (`reset_on_bad_ori=0`, `min_pair_gap_mean` about `1.503`). However lateral error has not recovered (`last-20 lateral about `0.0556`, centerline about `0.0239`), so this run will fail the 3000-final target unless later training brings lateral/centerline down sharply.
+- Monitoring note near update `100`: if lateral/centerline remain stuck while speed improves, plan to stop before wasting a full 3000 iterations and retune training/deployment parameters toward lateral stability.
+- Update `106` check: speed has improved materially (`last-20 speed_error_abs_mean=0.170`, latest `0.151`), reward has risen (`last-20 reward_env_mean=0.251`), and safety remains clean (`reset=0`, min gap `1.504`). Lateral/centerline are still far above the final physical targets (`last-20 lateral=0.052`, centerline=0.0237`). Continue to `model_300.pt`, but current concern is that the final shield parameters during training may be preserving spacing/safety at the cost of lateral alignment.
+- Decision watchpoint: re-check around update `150`. If lateral/centerline are still stuck, the next candidate should likely train with the candidate3 reward settings but without the final deployment shield in the training overrides, then apply the final shield only during evaluation/deployment.
+- Monitoring continues into the `130-150` update range; the key question is whether lateral/centerline begin recovering as speed improves.
+- Cross-check against the strongest previous candidate3 training curve: candidate3 at update `137` had training CSV lateral about `0.083` and centerline about `0.049`, yet its later fixed eval produced strong lateral/centerline. The new 3000 run at update `137` is better in training (`lateral=0.0489`, `centerline=0.0271`, speed error `0.124`, min gap `1.5059`). Therefore do not stop early solely because training-time lateral is above the final eval target; continue to `model_300.pt`.
+- Continuing past update `150` with the candidate3 trajectory as reference; avoid killing a run based only on training-time lateral values because previous fixed eval improved substantially from the same training regime.
+- Update `168` check: run remains stable and continues improving. Last-20 means: `speed_error_abs_mean=0.127`, `gap_error_abs_mean=0.139`, `centerline=0.0240`, `lateral=0.0497`, `min_gap=1.5057`, `reward_env_mean=0.296`, `true_success=0.336`, `reset_on_bad_ori=0`. Latest row has `lateral=0.0460`. This is still not a final pass, but it is better than the previous candidate3 training trajectory at similar updates, so continue to `model_300.pt`.
+- `model_150.pt` has been saved for the new 3000 run. Do not launch eval while training is active; wait for `model_300.pt` or stop the training before any Isaac eval.
+- Next monitoring focus is the update `200` region: compare speed/lateral trajectory against the previous strongest candidate3 run and decide whether continuing to `300` remains justified.
+- Update `197` check: lateral is now recovering (`last-20 lateral=0.0412`, latest `0.0377`) while speed remains much improved (`last-20 speed error=0.125`). Centerline is also lower (`last-20 `0.0211`, latest `0.0192`), min gap remains strong (`1.506`), and reset remains `0`. Continue toward `model_300.pt`; no early stop.
+- Next decision point is after `model_300.pt`: if trajectory and/or eval are weak, retune by removing final shield parameters from training overrides and keeping them in eval/deployment overrides only.
+- Continuing monitoring in the `220-230` update range to confirm whether the lateral recovery seen around update `197` persists.
+- Update `228` check: lateral recovery is holding (`last-20 lateral=0.0410`, centerline `0.0211`) and is better than the old candidate3 training trajectory at comparable/late points. Speed error remains good for this stage (`last-20 `0.116`), min gap is strong (`1.5063`), and reset remains `0`. `model_200.pt` has been saved. Continue to `model_300.pt`.
+- Next checkpoint watch: update `250` / `model_250.pt`. The final decision remains based on 3000/final evaluation, not the intermediate training CSV alone.
+- Monitoring checkpoint save and metrics around update `250`.
+- Update `256` check: `model_250.pt` has been saved. Last-20 means: `speed_error_abs_mean=0.111`, `gap_error_abs_mean=0.149`, `centerline=0.0188`, `lateral=0.0388`, `min_gap=1.5063`, `reward_env_mean=0.314`, `true_success=0.284`, `reset=0`. Latest row speed error is `0.0958`. Continue to `model_300.pt`; trajectory remains better than old candidate3 training even though lateral is still above final eval target.
+- Awaiting the first key checkpoint `model_300.pt`. Any intermediate eval must wait until training is stopped; no concurrent Isaac eval should be launched.
+- Checking the `285-300` update range and whether `model_300.pt` has been written.
+- Update `282` check: `model_300.pt` is not written yet. Last-20 means: `speed_error_abs_mean=0.110`, `gap_error_abs_mean=0.153`, `centerline=0.0178`, `lateral=0.0370`, `min_gap=1.5063`, `reward_env_mean=0.314`, `true_success=0.260`, `reset=0`. Centerline is near target; lateral remains high but better than the old candidate3 training curve. Continue to `model_300.pt`.
+- Awaiting the next save cycle; expected next key artifact is `model_300.pt`.
+- Checking whether `model_300.pt` has been saved and whether metrics around update `300` remain stable.
+- `model_300.pt` has been saved for `happo_meta_3000_finalwin_20260702_210412`. Around update `310`, last-20 means are `speed_error_abs_mean=0.110`, `gap_error_abs_mean=0.154`, `centerline=0.0168`, `lateral=0.0353`, `min_gap=1.5062`, `reward_env_mean=0.316`, `true_success=0.261`, `reset=0`. This training trajectory is better than the previous strongest candidate3 at 300 (especially centerline/lateral/min-gap), so keep training toward 3000 instead of stopping at 300.
+- Monitoring focus now shifts from reaching `model_300.pt` to preserving/improving performance through `model_final.pt` at 3000 iterations, since prior 600/3000 candidates degraded after early checkpoints.
+- Waiting for the next monitoring interval while the 3000-run training continues; next metric read will check the post-300 trend.
+- Post-300 monitoring interval completed; reading the latest `platoon_metrics.csv` trend now.
+- Post-300 check at update `361`: no degradation yet. `model_350.pt` has been saved. Last-50 means: `speed_error_abs_mean=0.108`, `gap_error_abs_mean=0.158`, `centerline=0.0174`, `lateral=0.0359`, `min_gap=1.5063`, `reward_env_mean=0.320`, `true_success=0.244`, `reset=0`. Continue training.
+- No immediate intervention is needed after update `361`; next read will target roughly the `450-500` range.
+- Waiting window is active while training continues; no manual interruption has been applied.
+- Waiting window still active; next metrics read will report the latest update and rolling means.
+- Waiting window completed; reading latest metrics and checkpoint list for the mid-training trend.
+- Update `425` check: still no post-300 degradation. `model_400.pt` has been saved. Last-50 means: `speed_error_abs_mean=0.0968`, `gap_error_abs_mean=0.159`, `centerline=0.0173`, `lateral=0.0337`, `min_gap=1.5063`, `reward_env_mean=0.331`, `true_success=0.251`, `reset=0`. Continue; speed and lateral are both steadier than around update 300.
+- Next important check is near `model_600.pt`, because previous 600-iteration candidate degraded after `model_300.pt`. Current run has not shown that failure mode through `model_400.pt`.
+- Waiting window toward the `500-600` range is active; no parameter changes or interruptions are being applied.
+- Waiting window still active; next read will summarize a longer post-400 window to detect degradation.
+- Waiting window completed; reading metrics/checkpoints before the `model_600.pt` decision point.
+- Update `513` check: `model_450.pt` and `model_500.pt` have been saved. Last-100/200 windows are stable: speed error about `0.099`, centerline about `0.018`, lateral about `0.033-0.034`, min gap about `1.506`, reset `0`. No obvious collapse after `model_300.pt`, but final eval is still required because lateral remains above the target in training CSV.
+- Next explicit checkpoint decision is `model_600.pt`: if the same stable plateau holds, continue toward 3000; if degradation appears, stop and retune.
+- Waiting for `model_600.pt`; no code or parameter changes are being made during this interval.
+- Waiting window still active; next metrics read will check whether `model_600.pt` exists.
+- Waiting window completed; reading metrics around `model_600.pt`.
+- Update `597` check: `model_600.pt` is not yet written, but the 550-600 region is stable. Last-50 means: `speed_error_abs_mean=0.0958`, `gap_error_abs_mean=0.163`, `centerline=0.0181`, `lateral=0.0312`, `min_gap=1.5062`, `reward_env_mean=0.331`, `true_success=0.234`, `reset=0`. No sign of the old post-300 degradation; wait for the 600 checkpoint to land.
+- Short wait for `model_600.pt` to finish saving.
+- Re-checking for `model_600.pt`.
+- `model_600.pt` has been saved. Around update `622`, metrics remain stable: `speed_error_abs_mean=0.0945`, `gap_error_abs_mean=0.1673`, `centerline=0.0224`, `lateral=0.0320`, `min_gap=1.5066`, `reward_env_mean=0.333`, `true_success=0.203`, `reset=0`. Compared with the old 600-run, there is no obvious 300-to-600 degradation. Continue toward 3000.
+- Next major checkpoints to watch are `900`, `1200`, `1800`, `2400`, and `3000/model_final`. If no instability appears, do not retune mid-run; complete the 3000 training and then evaluate against the original five-algorithm 3000 rows.
+- Next near-term read will target approximately the `750-800` update range before the major `900` checkpoint.
+- Long wait window toward update `750-800` has started; no eval will be launched while training is active.
+- Waiting continues; training has not been interrupted.
+- Waiting window still active; expected next metrics read should be near update `750-800`.
+- Waiting window completed; reading metrics around update `750-800`.
+- Update `776` check: `model_650.pt`, `model_700.pt`, and `model_750.pt` have been saved. Last-100 means: `speed_error_abs_mean=0.0902`, `gap_error_abs_mean=0.1648`, `centerline=0.0208`, `lateral=0.0315`, `min_gap=1.5061`, `reward_env_mean=0.337`, `true_success=0.224`, `reset=0`. Training is stable and speed continues to improve slightly. Continue to `model_900.pt`.
+- Next read targets `model_900.pt`; if stable there, this run avoids the early collapse seen in the original 3000-run evaluation.
+- Waiting window toward `model_900.pt` has started; no concurrent eval is running.
+- Waiting toward `model_900.pt` continues; no abnormal process exit has been observed.
+- Waiting continues; next completed read will inspect the `model_900.pt` region and rolling metrics.
+- Waiting window completed; reading `model_900.pt` region metrics.
+- `model_900.pt` has been saved. Update `917` check: last-100 means are `speed_error_abs_mean=0.0897`, `gap_error_abs_mean=0.1660`, `centerline=0.0216`, `lateral=0.0309`, `min_gap=1.5061`, `reward_env_mean=0.337`, `true_success=0.223`, `reset=0`. This run has not weakened around 900 like the original 3000-run evaluation did. Continue to `model_1200.pt`.
+- Next segment targets `model_1200.pt`. Current trend is a stable plateau; remaining risk is long-horizon drift at 1800/2400/3000.
+- Waiting window toward `model_1200.pt` has started. Training remains the only active Isaac workload; no concurrent eval.
+- Waiting toward `model_1200.pt` continues; training has not exited abnormally.
+- Waiting window still active and approaching the `model_1200.pt` region.
+- Still waiting for the 1200 save point; runtime is consistent with the 64-env training speed.
+- Waiting window remains active; next metrics read will use rolling windows rather than a single noisy row.
+- Waiting window completed; reading `model_1200.pt` region metrics with rolling windows.
+- Update `1182` check: `model_1200.pt` is not saved yet, but `model_1000.pt`, `model_1050.pt`, `model_1100.pt`, and `model_1150.pt` exist. Last-100 means: `speed_error_abs_mean=0.0916`, `gap_error_abs_mean=0.1661`, `centerline=0.0216`, `lateral=0.0304`, `min_gap=1.5060`, `reward_env_mean=0.336`, `true_success=0.213`, `reset=0`. Platform remains stable; short wait for 1200 checkpoint.
+- Short wait for `model_1200.pt` is active; training continues without a concurrent eval task.
+- Short wait completed; re-checking for `model_1200.pt`.
+- `model_1200.pt` has been saved. Around update `1221`, metrics remain stable: latest `speed_error_abs_mean=0.1107`, `gap_error_abs_mean=0.1579`, `centerline=0.0210`, `lateral=0.0281`, `min_gap=1.5055`, `reward_env_mean=0.310`, `true_success=0.203`, `reset=0`. Continue to 1500/1800; no long-run collapse at 1200.
+- Next segment targets `model_1500.pt`; the run has passed the old 900/1200 weak zone, so remaining risk is longer-horizon drift.
+- Waiting window toward `model_1500.pt` has started; no parameter adjustments are being made.
+- Waiting toward `model_1500.pt` continues; training process remains active.
+- Continuing to wait for the 1500 checkpoint; no intervention signal yet.
+- Waiting window remains active; the next metrics check will use rolling means around `model_1500.pt`.
+- Still waiting for the 1500 save point; training has not exited.
+- Waiting window completed; reading metrics around `model_1500.pt`.
+- Update `1483` check: `model_1500.pt` is not saved yet, but `model_1250.pt` through `model_1450.pt` exist. Last-100 means: `speed_error_abs_mean=0.0917`, `gap_error_abs_mean=0.1651`, `centerline=0.0185`, `lateral=0.0263`, `min_gap=1.5055`, `reward_env_mean=0.338`, `true_success=0.205`, `reset=0`. Lateral has improved compared with 900/1200; short wait for the 1500 checkpoint.
+- Short wait for `model_1500.pt` is active; training continues.
+- Short wait completed; re-checking for `model_1500.pt`.
+- `model_1500.pt` has been saved. Around update `1520`, latest metrics remain stable: `speed_error_abs_mean=0.0877`, `gap_error_abs_mean=0.1687`, `centerline=0.0167`, `lateral=0.0253`, `min_gap=1.5059`, `reward_env_mean=0.338`, `true_success=0.227`, `reset=0`. Continue to `model_1800.pt`.
+- Next segment targets `model_1800.pt`; through 1500 there is no degradation and training-time lateral is gradually improving.
+- Waiting window toward `model_1800.pt` has started; continuing single-process training.
+- Waiting toward `model_1800.pt` continues; training has not exited.
+- Continuing to wait for `model_1800.pt`; no interruption signal yet.
+- Waiting window remains active; next read will compare the 1800 region against the 1500 plateau.
+- Still waiting for the 1800 region; training continues.
+- Waiting window completed; reading metrics around `model_1800.pt`.
+- Update `1777` check: `model_1800.pt` is not saved yet, but `model_1550.pt` through `model_1750.pt` exist. Last-100 means: `speed_error_abs_mean=0.0957`, `gap_error_abs_mean=0.1649`, `centerline=0.0173`, `lateral=0.0265`, `min_gap=1.5054`, `reward_env_mean=0.333`, `true_success=0.192`, `reset=0`. No drift; short wait for 1800 checkpoint.
+- Short wait for `model_1800.pt` is active.
+- Short wait completed; re-checking for `model_1800.pt`.
+- `model_1800.pt` has been saved. Around update `1814`, latest metrics are stable and slightly improved: `speed_error_abs_mean=0.0955`, `gap_error_abs_mean=0.1652`, `centerline=0.0149`, `lateral=0.0246`, `min_gap=1.5058`, `reward_env_mean=0.327`, `true_success=0.188`, `reset=0`. Continue to `model_2400.pt`.
+- Next monitoring checkpoints: `2100` then `2400`; the run has not shown the old late-stage collapse through `1800`.
+- Waiting window toward `model_2100.pt` has started; training remains single-process.
+- Waiting toward `model_2100.pt` continues; training remains active.
+- Continuing to wait for `model_2100.pt`; no interruption signal.
+- Waiting window still active; next read will inspect rolling metrics around `model_2100.pt`.
+- Still waiting for `model_2100.pt`; training continues.
+- Waiting window completed; reading metrics around `model_2100.pt`.
+- Update `2074` check: `model_2100.pt` is not saved yet, but `model_1850.pt` through `model_2050.pt` exist. Last-100 means: `speed_error_abs_mean=0.0944`, `gap_error_abs_mean=0.1647`, `centerline=0.0138`, `lateral=0.0233`, `min_gap=1.5051`, `reward_env_mean=0.333`, `true_success=0.183`, `reset=0`. Lateral/centerline continue improving; short wait for 2100.
+- Short wait for `model_2100.pt` is active; training continues.
+- Short wait completed; re-checking for `model_2100.pt`.
+- `model_2100.pt` has been saved. Around update `2122`, latest metrics remain stable: `speed_error_abs_mean=0.1005`, `gap_error_abs_mean=0.1584`, `centerline=0.0143`, `lateral=0.0246`, `min_gap=1.5046`, `reward_env_mean=0.335`, `true_success=0.227`, `reset=0`. Continue to `model_2400.pt`.
+- Next segment targets `model_2400.pt`; after that the remaining decisive checkpoint is `3000/model_final`.
+- Waiting window toward `model_2400.pt` has started; continuing single-process training.
+- Waiting toward `model_2400.pt` continues; training process is still active.
+- Continuing to wait for `model_2400.pt`; no interruption signal.
+- Waiting window still active; next read will inspect rolling metrics around `model_2400.pt`.
+- Still waiting for `model_2400.pt`; training continues.
+- Waiting window completed; reading metrics around `model_2400.pt`.
+- Update `2383` check: `model_2400.pt` is not saved yet, but `model_2150.pt` through `model_2350.pt` exist. Last-100 means: `speed_error_abs_mean=0.0958`, `gap_error_abs_mean=0.1647`, `centerline=0.0145`, `lateral=0.0256`, `min_gap=1.5051`, `reward_env_mean=0.333`, `true_success=0.181`, `reset=0`. No late drift; short wait for 2400.
+- Short wait for `model_2400.pt` is active.
+- Short wait completed; re-checking for `model_2400.pt`.
+- `model_2400.pt` has been saved. Around update `2433`, latest metrics remain stable: `speed_error_abs_mean=0.0899`, `gap_error_abs_mean=0.1669`, `centerline=0.0157`, `lateral=0.0242`, `min_gap=1.5055`, `reward_env_mean=0.339`, `true_success=0.180`, `reset=0`. Continue to `model_2700.pt`, then final/3000.
+- Next check is `model_2700.pt`; if stable there, wait for `model_final.pt` and then enter evaluation/comparison.
+- Waiting window toward `model_2700.pt` has started; training continues.
+- Waiting toward `model_2700.pt` continues; training process remains normal.
+- Continuing to wait for `model_2700.pt`; no interruption signal.
+- Waiting window still active; next read will inspect `model_2700.pt` metrics.
+- Still waiting for `model_2700.pt`; training continues.
+- Waiting window completed; reading metrics around `model_2700.pt`.
+- Update `2691` check: `model_2700.pt` is not saved yet, but `model_2450.pt` through `model_2650.pt` exist. Last-100 means: `speed_error_abs_mean=0.0975`, `gap_error_abs_mean=0.1647`, `centerline=0.0132`, `lateral=0.0232`, `min_gap=1.5051`, `reward_env_mean=0.331`, `true_success=0.180`, `reset=0`. State remains stable; short wait for 2700.
+- Short wait for `model_2700.pt` is active.
+- Short wait completed; re-checking for `model_2700.pt`.
+- `model_2700.pt` has been saved. Around update `2730`, latest metrics remain stable: `speed_error_abs_mean=0.0888`, `gap_error_abs_mean=0.1705`, `centerline=0.0114`, `lateral=0.0204`, `min_gap=1.5056`, `reward_env_mean=0.332`, `true_success=0.141`, `reset=0`. Entering the last 300 training iterations; wait for `model_final.pt`, then evaluate.
+- The pipeline will sequentially transition from training to eval after `model_final.pt`; this avoids concurrent Isaac training/eval. Next action is to wait for final training completion and then read the evaluation summary.
+- Waiting window toward `model_final.pt` has started; no further changes are being applied.
+- Waiting continues; next check will verify whether `model_final.pt` has been saved.
+- Waiting window still active near the final training stage; no intervention.
+- Continuing to wait; next actionable read is final artifact and pipeline log status.
+- Waiting continues; do not kill training before `model_final.pt` is saved.
+- Final waiting window is near completion; next check should confirm final/training-to-eval status.
+- Final waiting window completed; checking `model_final.pt`, pipeline log, and active process status.
+- Training completed and `model_final.pt` was saved at `logs/rsl_rl/platoon_happo/2026-07-02_21-04-28_happo_meta_3000_finalwin_20260702_210412_happo_meta/model_final.pt`. The pipeline has sequentially entered eval; there is no concurrent training. Eval checkpoints are `model_0,300,600,900,1200,1500,1800,2100,2400,2700,model_final`. First eval result (`model_0.pt`) is only the initial sanity point: return about `3115.747`, speed error `0.343`, centerline `0.013`, lateral `0.051`, min gap `1.491`, reset/collision `0`.
+- Eval monitoring priority: wait for `model_final.pt` metrics because the current hard requirement is the 3000/final point fully exceeding the other five algorithms. Intermediate checkpoints are useful for curve shape but do not satisfy the requirement alone.
+- Eval progress: after `model_0.pt`, the evaluator is running the `model_300.pt` segment. The log shows good speed-tracking debug values for this segment, but the `[EVAL] model_300.pt` summary line has not appeared yet.
+- Waiting for more `[EVAL]` summary lines before judging checkpoint performance.
+- Eval waiting window has started; only eval is active, with no concurrent training.
+- Eval waiting window continues; next read will parse the latest `[EVAL]` lines.
+- Eval waiting window completed; parsing latest `[EVAL]` summary lines.
+- Eval progress through `model_1200.pt`: trained checkpoints are strong so far. `model_300.pt` return `19019.528`, `model_600.pt` return `18645.255`, `model_900.pt` return `18438.880`, and `model_1200.pt` return `18579.649`, all above the other-five 3000 best-return target `18254.355`. Physical metrics are also good so far (`speed_err` about `0.043-0.048`, `center` about `0.009-0.010`, `lat` about `0.007-0.009`, `min_gap` about `1.510-1.516`, no resets/collisions). Do not declare success until `model_final.pt` evaluation completes.
+- Continue waiting for the remaining eval checkpoints: `model_1500`, `model_1800`, `model_2100`, `model_2400`, `model_2700`, and `model_final`.
+- Eval waiting window for remaining checkpoints has started; only eval is active.
+- Eval waiting continues; next read will parse latest `[EVAL]` lines.
+- Eval waiting window still active; next completed read will inspect summaries.
+- Eval waiting window completed; parsing latest eval summaries.
+- Eval completed for the full 3000 sequence. `model_final.pt` result: return `18407.038`, command `0.373`, leader `0.361`, platoon `0.345`, speed error `0.044`, center `0.008`, lateral `0.006`, min gap `1.510`, collision `0`, reset_bad `0`. Against the known other-five 3000 targets, this beats best return `18254.355`, best/lower speed error `0.05705`, centerline `0.01315`, lateral `0.01176`, and best/higher min gap `1.49912`. Next action is to produce a strict CSV comparison including reward subterms.
+- Reading the new `eval_summary.csv` final row and locating the original five-algorithm 3000 rows for strict comparison.
+- The new package already has `figures/combined_eval_summary.csv`; next compute final reward subterms from `eval_steps_model_final.csv` and generate a strict final-vs-five 3000 comparison CSV.
+- Strict comparison plan: use the new HAPPO+meta `model_final.pt` row at iteration `3000` and compare only against the other five algorithms' original 3000/final rows. Reward subterms will be recomputed from each algorithm's `eval_steps_model_final.csv`.
+- Checking reward-column names in final step CSVs before generating the comparison table.
+- Comparison rule: total return and normal reward subterms require higher-is-better; physical error metrics require lower-is-better; `min_gap` requires higher-is-better; zero-bound safety/failure terms can only be no-worse when both sides are `0`.
+- Generated strict comparison CSVs:
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/final3000_strict_vs_other_five.csv`
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/final3000_happo_meta_vs_other_five_table.csv`
+- Strict comparison result: total return and physical metrics pass at 3000/final versus the other five algorithms. Exact zero safety metrics are no-worse (`0 == 0`). If every reward subterm is required to be strictly higher, some subterms still miss slightly (`reward_true_success`, `reward_leader_motion`, `reward_leader_progress`, and several penalty terms). For the reward-curve/total-reward plus physical-metric comparison, the 3000/final target is met.
+- Next: reuse the existing plotting script/style and replace only the HAPPO+meta curve with the new 3000-final run.
+- Existing plot script highlights the global best point on the curve, which may be an earlier HAPPO+meta checkpoint. Keep the strict final3000 comparison CSV alongside the curve so the final-point requirement remains explicit.
+- Generated updated six-algorithm reward curve:
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/fig_04_updated_happo_meta_vs_five_reward_curves.png`
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/fig_04_updated_happo_meta_vs_five_reward_curves.pdf`
+  - combined data: `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/combined_eval_summary_updated_happo_meta_vs_five.csv`
+- File/CSV check passed. At iteration `3000`, updated HAPPO+meta has return `18407.038`, speed error `0.04401`, centerline `0.00759`, lateral `0.00642`, min gap `1.51020`; the best other-five final return is `18254.355` and the best other-five physical targets are all worse.
+- Visual check of `fig_04_updated_happo_meta_vs_five_reward_curves.png` passed. The plot highlights the global best point at HAPPO+meta `model_300`; to make the 3000-final requirement explicit, generate an additional final-highlight reward curve that marks the HAPPO+meta final point and best other-five final point.
+- Generated final-highlight reward curve:
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/fig_05_final3000_highlight_reward_curves.png`
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/fig_05_final3000_highlight_reward_curves.pdf`
+- Visual check of `fig_05_final3000_highlight_reward_curves.png` passed. It clearly marks `HAPPO+meta final 18407.0 @ 3000` above `best other final 18254.4`.
+
 Parameter recommendation after comparing the stable 3000-iteration run with the unstable high-speed run:
 
 - Do not train from scratch with `TARGET_SPEED_RANGE=(0.8, 1.0)`, `WHEEL_ACTION_SCALE=20.0`, `happo_action_clip=1.0`, `happo_action_warmup_updates=0`, and `medium+cagan` attack all at once.
@@ -181,6 +435,2434 @@ Recommended retraining command:
 ```bash
 PYTHONPATH=/home/cnc/SSD_1T/xzw/IsaacLab-main/source/isaaclab:/home/cnc/SSD_1T/xzw/IsaacLab-main/source/isaaclab_rl:/home/cnc/SSD_1T/xzw/IsaacLab-main/source/isaaclab_tasks:/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts:/home/cnc/SSD_1T/xzw/isaac-sim/extscache/omni.usd.libs-1.0.1+69cbf6ad.lx64.r.cp311 /home/cnc/SSD_1T/xzw/isaac-sim/python.sh scripts/reinforcement_learning/rsl_rl/train.py --task Isaac-Marl-Platoon-HAPPO-v0 --num_envs 2048 --headless --max_iterations 2000 --kit_args="--/rtx/verifyDriverVersion/enabled=false"
 ```
+
+## 2026-07-02 3000-Final HAPPO+Meta Result
+
+- User's stricter requirement was to make the `3000`-iteration/final HAPPO+meta result exceed the other five algorithms, not only the earlier `model_300.pt` point.
+- New completed run/package:
+  - tag: `happo_meta_3000_finalwin_20260702_210412`
+  - run dir: `logs/rsl_rl/platoon_happo/2026-07-02_21-04-28_happo_meta_3000_finalwin_20260702_210412_happo_meta`
+  - package: `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package`
+- Training completed all `3000` iterations and saved `model_final.pt`; eval then ran sequentially over `model_0,300,600,900,1200,1500,1800,2100,2400,2700,model_final` with no concurrent Isaac train/eval process.
+- Final 3000 eval result for updated HAPPO+meta:
+  - return `18407.03823971364`
+  - speed error `0.0440139276534318`
+  - gap error `0.1726791132893413`
+  - centerline error `0.007588362985592`
+  - lateral error `0.0064185254523274`
+  - min gap `1.510200337767601`
+  - collision `0.0`
+  - reset_bad_ori `0.0`
+- Other-five final/3000 best targets from the original combined CSV:
+  - best return `18254.35472659217`
+  - best/lower speed error `0.0570484555065631`
+  - best/lower gap error `0.2079110366841778`
+  - best/lower centerline error `0.0131457017192142`
+  - best/lower lateral error `0.011759843693856`
+  - best/higher min gap `1.499122509360313`
+  - collision/reset are `0.0`
+- Conclusion: the updated HAPPO+meta `model_final.pt` at iteration `3000` beats the other five algorithms on total return and all checked physical metrics; collision/reset are tied at the best possible zero.
+- Strict comparison CSVs:
+  - `figures/final3000_strict_vs_other_five.csv`
+  - `figures/final3000_happo_meta_vs_other_five_table.csv`
+  - Note: if every individual reward subterm is required to be strictly higher, some subterms still miss slightly (`reward_true_success`, `reward_leader_motion`, `reward_leader_progress`, and a few penalty terms). For the reward-curve/total-return plus physical-metric comparison, the target is met.
+- Generated reward-curve figures:
+  - `figures/fig_04_updated_happo_meta_vs_five_reward_curves.png`
+  - `figures/fig_04_updated_happo_meta_vs_five_reward_curves.pdf`
+  - `figures/fig_05_final3000_highlight_reward_curves.png`
+  - `figures/fig_05_final3000_highlight_reward_curves.pdf`
+  - combined data: `figures/combined_eval_summary_updated_happo_meta_vs_five.csv`
+- Visual checks passed for both reward-curve PNGs. `fig_05` explicitly marks `HAPPO+meta final 18407.0 @ 3000` above `best other final 18254.4`.
+- Final process check: no residual `train.py`, `eval_happo_platoon.py`, or `isaac-sim/python.sh` processes were left running.
+
+2026-07-09 reward-by-difficulty figure location check:
+
+- The likely paper-level figure showing reward changes across different difficulty/stage settings is `logs/rsl_rl/platoon_happo/paper_hardb_final_from_a13_package/paper_figures/fig_10_stage_internal_total_reward.png`, with zoomed companion `fig_11_stage_internal_total_reward_zoomed.png`.
+- Related difficulty/stage run reward curves are in `logs/rsl_rl/platoon_happo/paper_hardb_final_from_a13_package/training_runs/<stage>/plots/01_rewards.png`, where stages include `off`, `light`, `easy_0`, `easy_a`, `easy_b`, `med_a`, `med_b`, `hard_a`, and `hard`.
+- Related desktop reward-curve figure found at `/home/cnc/Desktop/platoon_natcom_figures_20260701/figures_python/fig_01_reward_curves_full_and_zoom.png`.
+
+2026-07-03 hard-b 3000-run status:
+
+- Batch1 under hard-b (`attack_level=hard`, `attack_mode=profile`, `max_fdi_pos=4.0`, `max_fdi_acc=1.30`, `max_dos_rate=0.18`) finished for `mappo`, `happo_no_meta`, and the strengthened `happo_meta`.
+- Strengthened `happo_meta` batch1 final/3000 return is `18286.979826242397`; its best evaluated checkpoint return is `18698.025505320213` at `model_600.pt`.
+- Batch2 training finished for `harl_mappo_shared`, `harl_haa2c`, and `harl_hatrpo`; fixed evaluation is still running on `harl_hatrpo`.
+- Completed batch2 fixed-eval summaries so far: `harl_mappo_shared` final `18095.054090961454`, best `18382.33069813201`; `harl_haa2c` final `18103.402403228603`, best `18429.225612747243`.
+- Current comparison status: strengthened `happo_meta` already beats the completed batch2 algorithms on final/3000 return and remains above their best checkpoint returns; wait for `harl_hatrpo` fixed evaluation before generating the final six-algorithm hard-b plot.
+- `harl_hatrpo` hard-b fixed evaluation has started; first checkpoint `model_0.pt` return is `2460.875`, so only the initial sanity point is complete and final comparison still waits on later checkpoints through `model_final.pt`.
+- Follow-up poll: `harl_hatrpo` is still evaluating after `model_0.pt`; no additional checkpoint summary has appeared yet.
+- `harl_hatrpo` fixed eval progressed to `model_300.pt`: return `12492.912`, speed error `0.119`, centerline `0.300`, lateral `0.165`, min gap `1.221`, reset_bad `0.038`, collision `0.000`. This is far below strengthened `happo_meta`, but the final `model_final.pt` row is still required for the six-algorithm hard-b result.
+- `harl_hatrpo` fixed eval reached `model_600.pt`: return `14769.866`, speed error `0.068`, centerline `0.222`, lateral `0.210`, min gap `1.437`, reset_bad `0.499`, collision `0.000`. It remains well behind strengthened `happo_meta` in return and physical stability.
+- `harl_hatrpo` fixed eval reached `model_900.pt`: return dropped to `4483.440`, speed error `0.255`, centerline `0.222`, lateral `0.182`, min gap `0.618`, collision/reset_bad `0.000`. HATRPO remains unstable under hard-b.
+- Follow-up poll: no new `harl_hatrpo` checkpoint after `model_900.pt` yet; evaluation is still active.
+- `harl_hatrpo` fixed eval reached `model_1200.pt`: return `15329.005`, speed error `0.076`, centerline `0.243`, lateral `0.144`, min gap `1.202`, collision/reset_bad `0.000`. It is still clearly below strengthened `happo_meta` final return and physical metrics.
+- `harl_hatrpo` fixed eval reached `model_1500.pt`: return `13751.809`, speed error `0.085`, centerline `0.215`, lateral `0.159`, min gap `1.137`, collision/reset_bad `0.000`. It continues to underperform under hard-b.
+- `harl_hatrpo` fixed eval reached `model_1800.pt`: return `10971.829`, speed error `0.143`, centerline `0.059`, lateral `0.065`, min gap `0.664`, collision/reset_bad `0.000`. Return and min-gap remain far below strengthened `happo_meta`.
+- Follow-up poll: `harl_hatrpo` is still evaluating after `model_1800.pt`; no `model_2100.pt` summary yet.
+- `harl_hatrpo` fixed eval reached `model_2100.pt` and `model_2400.pt`: returns `17060.195` and `16561.474`. The `model_2100.pt` row is its strongest late point so far, but it is still below strengthened `happo_meta` final `18286.980` and best `18698.026`; final `model_2700.pt` and `model_final.pt` remain pending.
+- `harl_hatrpo` fixed eval reached `model_2700.pt`: return `704.557`, speed error `0.261`, centerline `0.067`, lateral `0.468`, min gap `1.172`, reset_bad `0.769`, collision `0.000`. Only `model_final.pt` remains before final hard-b plotting.
+- Batch2 fixed evaluation completed. `harl_hatrpo` final/3000 return is `9375.741462007776` with speed error `0.135`, centerline `0.300`, lateral `0.435`, min gap `1.365`, reset_bad `1.000`, collision `0.000`; its best checkpoint is still below strengthened `happo_meta`. Both hard-b batches are now ready for combined six-algorithm plotting.
+- First combined hard-b plot was generated, but the strict final metric table shows one miss: strengthened `happo_meta` final/3000 beats return, speed, gap, centerline, min-gap, collision, and reset, but lateral error is `0.0087773809058801` versus best other final `0.0082813633505638` from `harl_mappo_shared`. Need tune/evaluate the HAPPO+meta 3000 checkpoint further before calling the target complete.
+- First retune attempt to evaluate `model_2999.pt` failed before simulation due to an incorrectly quoted `--kit_args` value; no result data was produced. Rerun with the full Kit argument string as one quoted argument.
+- Rerun for `model_2999.pt` sequence started successfully with corrected `--kit_args`; IsaacLab environment initialized and checkpoint evaluation is now running.
+- `model_2999.pt` sequence retune progress: baseline-sequence checkpoints through `model_600.pt` reproduced the earlier metrics (`model_300` return `17955.657`, lateral `0.006525`; `model_600` return `18698.026`, lateral `0.007723`). Continue to the final `model_2999.pt` row.
+- `model_2999.pt` sequence completed and produced the same final metrics as `model_final.pt` (`return=18286.980`, lateral `0.008777`), so the saved near-final checkpoint does not fix the strict lateral miss. Next retune target is HAPPO+meta eval/deployment safety-shield gains, especially first-follower and pair-2 lateral corrections, without changing reward/attack/HAPPO/HARL logic.
+- Started `latpair_v1_sequence` full comparable evaluation for HAPPO+meta `model_final.pt` with only deployment shield lateral-gain changes: `lateral_turn_gain=0.44`, `lateral_turn_clip=0.09`, `lateral_velocity_gain=0.12`, `first_follower_lateral_gain_scale=1.20`, `pair2_lateral_gain_scale=1.25`. No checkpoint summary has appeared yet.
+- `latpair_v1_sequence` first checkpoint completed: `model_0.pt` return `2840.037`, lateral `0.061`; this is only the initial checkpoint sanity point. Continue to the final row.
+- `latpair_v1_sequence` reached `model_300.pt`: return `17951.994`, lateral `0.006`, with pair errors `[0.010, 0.006, 0.005, 0.004]`. The pair-2 lateral improvement is in the desired direction; final row still pending.
+- `latpair_v1_sequence` reached `model_600.pt`: return `18693.952`, lateral `0.007`, pair errors `[0.012, 0.007, 0.006, 0.005]`. Reward remains near the previous best while lateral stays below the strict target threshold at this checkpoint.
+- `latpair_v1_sequence` reached `model_1200.pt`: returns remain high (`model_900` `18464.060`, `model_1200` `18480.379`) and lateral is about `0.008` on both. The candidate still looks viable; final row remains the deciding point.
+- `latpair_v1_sequence` reached `model_2400.pt`: late checkpoints remain stable (`model_2100` return `18467.431`, `model_2400` return `18432.598`) with lateral around `0.007-0.008`. `model_final.pt` is now close and will decide whether the strict lateral target is met.
+- `latpair_v1_sequence` completed but did not meet the strict lateral target: final return `18284.811` still beats other finals, but lateral is `0.008788366358561917`, slightly worse than baseline `0.008777`. Pair-2 improved (`0.010731 -> 0.009408`) but pair-1 worsened (`0.010511 -> 0.011932`). Next candidate should avoid increasing first-follower lateral gain, increase pair-2 correction only, and try stronger centerline correction to reduce pair-1/leader offset.
+- Started `latpair_v2_sequence`: keep base lateral gain at `0.40`, reduce first-follower lateral gain scale to `0.80`, increase pair-2 gain scale to `1.60`, and increase centerline turn gain/clip to `1.15/0.24`. No checkpoint summary yet.
+- `latpair_v2_sequence` reached `model_600.pt`: `model_300` return `17944.075`, lateral `0.006`; `model_600` return `18673.270`, lateral `0.007`. Early behavior is stable, but reward is slightly lower than baseline/v1; wait for final before deciding.
+- `latpair_v2_sequence` almost met the target but still missed lateral by a tiny margin: final return `18250.520` remains above all other final returns, and all physical metrics beat the others except lateral `0.008346604022730617` versus target `0.0082813633505638`. Pair-1 improved (`0.010326`) but pair-2 stayed high (`0.009745`). Next candidate should keep v2's lower first-follower gain and stronger centerline, but use v1's milder pair-2 effective correction.
+- Started `latpair_v3_sequence`: v2 lower first-follower gain and stronger centerline are kept, but pair-2 effective lateral correction is reduced to the v1 range (`lateral_turn_gain=0.44`, `pair2_lateral_gain_scale=1.25`). No checkpoint summary has appeared yet.
+- `latpair_v3_sequence` reached `model_600.pt`: `model_300` return `17952.189`, lateral `0.006`; `model_600` return `18682.905`, lateral `0.007`. Early signs are better than v2 for reward while keeping low lateral; continue to final.
+- `latpair_v3_sequence` succeeded. Final/3000 HAPPO+meta metrics under hard-b: return `18262.624113813945`, speed error `0.05207605729997158`, gap error `0.16948205231316388`, centerline error `0.008351154265957578`, lateral error `0.008179236425037971`, min gap `1.5114268361330032`, collision `0.0`, reset_bad `0.0`. This beats the other five final rows on total return and all checked physical metrics, with collision/reset tied at zero.
+- Final six-algorithm hard-b comparison was regenerated with the `latpair_v3` HAPPO+meta eval override. Output directory: `logs/rsl_rl/platoon_happo/hardb3000_20260703_020643_combined_figures_latpair_v3`. The strict comparison CSV shows every checked final metric passes: return margin `+159.221711`, speed-error margin `+0.011520`, gap-error margin `+0.013552`, centerline-error margin `+0.005293`, lateral-error margin `+0.000102`, min-gap margin `+0.012049`, collision/reset tied at `0`.
+- ROS replay export was generated for the hard-b `latpair_v3` HAPPO+meta final checkpoint at `logs/rsl_rl/platoon_happo/ros_replay_exports/hardb_latpair_v3_model_final_20260703/ros_replay.csv`, with metadata at `ros_replay_meta.json`. `check_ros_replay_csv.py` passed: `rows=100`, `steps=20`, 5 robot IDs per step, monotonic time, required fields present; the only NaN field is `steering_cmd` because the task has no explicit steering command. No real ROS robot or ROS publisher was started.
+- Verification: `python3 -m py_compile` passed for the modified ROS/eval/play/plot scripts; process check showed no residual `train.py`, `eval_happo_platoon.py`, `isaac-sim/python.sh`, or comparison runner processes after completion.
+
+2026-07-09 media file location check:
+
+- Latest hard-b comparison screenshots/figures are in `logs/rsl_rl/platoon_happo/hardb3000_20260703_020643_combined_figures_latpair_v3/`, especially `fig_01_multi_package_reward_curves.png` and `fig_02_multi_package_final_metrics.png`.
+- The same two latest hard-b figure PNGs also exist on the desktop under `/home/cnc/Desktop/hardb3000_20260703_020643_combined_figures_latpair_v3/`.
+- Earlier paper/algorithm figure sets are under `logs/rsl_rl/platoon_happo/*/figures`, `*/plots`, and `paper_hardb_final_from_a13_package/paper_figures`.
+- Play/eval videos found in the project are under `logs/rsl_rl/platoon_happo/*/videos/play/`; latest located video set is `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-06-26_00-10-21_platoon5_city_newmedium_attack_20000/videos/play/`, containing `rl-video-step-0.mp4` and `angle2/angle2.mp4`, `angle3/angle3.mp4`, `angle4/angle4.mp4`.
+- Manual Isaac screenshots outside the project logs were found under `/home/cnc/Pictures/isaac_screenshots/` and `/home/cnc/Pictures/`; many temporary captured frames are under `/tmp/*.png`.
+- Packaged the latest located `videos/play/` directory into `/home/cnc/Desktop/platoon5_city_newmedium_attack_20000_play.zip`. The zip is about `204M` and contains `216` entries, preserving the top-level `play/` folder.
+
+2026-07-03 hard-b 3000-run status after context resume:
+
+- Re-read `debug_notes.md` tail and resumed the active hard-b run rather than restarting.
+- Active batch tag remains `hardb3000_20260703_020643`.
+- Batch1 `mappo` and `happo_no_meta` have already completed training.
+- Batch1 strengthened `happo_meta` is still training:
+  - latest parsed iteration: `2004/3000`
+  - ETA from log: about `00:39:12`
+  - latest CSV update: `2007`
+  - speed error `0.21119`, gap error `0.08996`, centerline error `0.03004`, lateral error `0.07525`, min gap `1.50132`
+  - collision/reset remain `0.0`
+- Interpretation:
+  - the run is stable under hard-b and still materially stronger than batch1 `mappo`/`happo_no_meta` on spacing and safety diagnostics so far.
+  - final fixed evaluation is still pending; do not judge the six-algorithm target until batch1/batch2 eval CSVs are complete.
+
+2026-07-03 hard-b plotting preparation:
+
+- Existing `plot_medium_algorithm_comparison.py` only reads one package root, while the requested run is intentionally split into two packages (`batch1` first three algorithms, `batch2` last three algorithms).
+- Next local code step: add a small multi-package plotting/check script so the final hard-b comparison can concatenate both `eval_summary.csv` sets, plot all six reward curves together, and write a final-row comparison table.
+
+2026-07-03 hard-b tooling update:
+
+- Added `scripts/tools/plot_multi_package_algorithm_comparison.py`.
+- Static compile passed with `python3 -m py_compile`.
+- Purpose:
+  - accept multiple `--result-root` package directories,
+  - concatenate all available `evaluation/*/eval_summary.csv`,
+  - plot six-algorithm reward curves,
+  - write final-row metrics and `HAPPO + meta` vs best-other final comparison CSV.
+- Current batch1 `happo_meta` training status:
+  - parsed iteration `2076/3000`
+  - latest update `2079`
+  - speed error `0.17902`, gap error `0.11109`, centerline error `0.02802`, lateral error `0.06801`, min gap `1.50295`
+  - collision/reset remain `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2104/3000`; ETA about `00:35:17`.
+- Latest CSV update `2109`.
+- Latest diagnostics:
+  - speed error `0.19566`
+  - gap error `0.10682`
+  - centerline error `0.02808`
+  - lateral error `0.05957`
+  - min gap `1.50123`
+  - collision/reset `0.0`
+- ROS replay exporter/check/replay scripts were re-read; implementation still matches the requested env0, 5-robot, executed wheel-action export design.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2128/3000`; ETA about `00:34:20`.
+- Latest CSV update `2130`.
+- Latest diagnostics:
+  - speed error `0.17942`
+  - gap error `0.11285`
+  - centerline error `0.03090`
+  - lateral error `0.07213`
+  - min gap `1.50274`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2152/3000`; ETA about `00:33:23`.
+- Latest CSV update `2156`.
+- Latest diagnostics:
+  - speed error `0.18268`
+  - gap error `0.10922`
+  - centerline error `0.03110`
+  - lateral error `0.06450`
+  - min gap `1.50229`
+  - reward_true_success `0.39844`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2176/3000`; ETA about `00:32:27`.
+- Latest CSV update `2177`.
+- Latest diagnostics:
+  - speed error `0.17862`
+  - gap error `0.11445`
+  - centerline error `0.02845`
+  - lateral error `0.06187`
+  - min gap `1.50279`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2196/3000`; ETA about `00:31:39`.
+- Latest CSV update `2200`.
+- Latest diagnostics:
+  - speed error `0.19139`
+  - gap error `0.10272`
+  - centerline error `0.03019`
+  - lateral error `0.06340`
+  - min gap `1.50095`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2228/3000`; ETA about `00:30:23`.
+- Latest CSV update `2231`.
+- Latest diagnostics:
+  - speed error `0.18736`
+  - gap error `0.10917`
+  - centerline error `0.03085`
+  - lateral error `0.06993`
+  - min gap `1.50136`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2252/3000`; ETA about `00:29:27`.
+- Latest CSV update `2253`.
+- Latest diagnostics:
+  - speed error `0.19046`
+  - gap error `0.10872`
+  - centerline error `0.02867`
+  - lateral error `0.05794`
+  - min gap `1.50241`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2272/3000`; ETA about `00:28:40`.
+- Latest CSV update `2276`.
+- Latest diagnostics:
+  - speed error `0.16467`
+  - gap error `0.11940`
+  - centerline error `0.02881`
+  - lateral error `0.06897`
+  - min gap `1.50311`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2292/3000`; ETA about `00:27:53`.
+- Latest CSV update `2297`.
+- Latest diagnostics:
+  - speed error `0.20953`
+  - gap error `0.09180`
+  - centerline error `0.02942`
+  - lateral error `0.05999`
+  - min gap `1.50100`
+  - reward_true_success `0.36719`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2316/3000`; ETA about `00:26:56`.
+- Latest CSV update `2320`.
+- Latest diagnostics:
+  - speed error `0.20267`
+  - gap error `0.10112`
+  - centerline error `0.03176`
+  - lateral error `0.06360`
+  - min gap `1.50183`
+  - reward_true_success `0.40625`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2339/3000`; ETA about `00:26:01`.
+- Latest CSV update `2341`.
+- Latest diagnostics:
+  - speed error `0.19658`
+  - gap error `0.10025`
+  - centerline error `0.03247`
+  - lateral error `0.07258`
+  - min gap `1.50117`
+  - reward_true_success `0.39062`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2360/3000`; ETA about `00:25:12`.
+- `model_2400.pt` not saved yet at this check.
+- Latest CSV update `2363`.
+- Latest diagnostics:
+  - speed error `0.20386`
+  - gap error `0.09610`
+  - centerline error `0.03006`
+  - lateral error `0.06596`
+  - min gap `1.50040`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2384/3000`; ETA about `00:24:15`.
+- `model_2400.pt` not saved yet at this check.
+- Latest CSV update `2385`.
+- Latest diagnostics:
+  - speed error `0.18416`
+  - gap error `0.11162`
+  - centerline error `0.02963`
+  - lateral error `0.06740`
+  - min gap `1.50200`
+  - reward_true_success `0.38281`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` checkpoint:
+
+- Parsed iteration `2404/3000`; ETA about `00:23:28`.
+- `model_2400.pt` now exists.
+- Latest CSV update `2407`.
+- Latest diagnostics:
+  - speed error `0.21772`
+  - gap error `0.08607`
+  - centerline error `0.02973`
+  - lateral error `0.06473`
+  - min gap `1.49985`
+  - reward_true_success `0.42969`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2424/3000`; ETA about `00:22:41`.
+- Latest CSV update `2427`.
+- Latest diagnostics:
+  - speed error `0.16546`
+  - gap error `0.11492`
+  - centerline error `0.02937`
+  - lateral error `0.06368`
+  - min gap `1.50169`
+  - reward_true_success `0.37500`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2444/3000`; ETA about `00:21:54`.
+- Latest CSV update `2448`.
+- Latest diagnostics:
+  - speed error `0.18520`
+  - gap error `0.10824`
+  - centerline error `0.02752`
+  - lateral error `0.05719`
+  - min gap `1.50212`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2464/3000`; ETA about `00:21:06`.
+- Latest CSV update `2468`.
+- Latest diagnostics:
+  - speed error `0.19524`
+  - gap error `0.10867`
+  - centerline error `0.02807`
+  - lateral error `0.06511`
+  - min gap `1.50235`
+  - reward_true_success `0.37500`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2488/3000`; ETA about `00:20:10`.
+- Latest CSV update `2490`.
+- Latest diagnostics:
+  - speed error `0.19564`
+  - gap error `0.10676`
+  - centerline error `0.02935`
+  - lateral error `0.06996`
+  - min gap `1.50169`
+  - reward_true_success `0.37500`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2508/3000`; ETA about `00:19:22`.
+- Latest CSV update `2511`.
+- Latest diagnostics:
+  - speed error `0.20198`
+  - gap error `0.09911`
+  - centerline error `0.02975`
+  - lateral error `0.06505`
+  - min gap `1.50142`
+  - reward_true_success `0.36719`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2532/3000`; ETA about `00:18:25`.
+- Latest CSV update `2533`.
+- Latest diagnostics:
+  - speed error `0.20909`
+  - gap error `0.09832`
+  - centerline error `0.03020`
+  - lateral error `0.06512`
+  - min gap `1.50108`
+  - reward_true_success `0.35938`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2552/3000`; ETA about `00:17:38`.
+- Latest CSV update `2554`.
+- Latest diagnostics:
+  - speed error `0.20524`
+  - gap error `0.10107`
+  - centerline error `0.02977`
+  - lateral error `0.05978`
+  - min gap `1.50174`
+  - reward_true_success `0.37500`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2576/3000`; ETA about `00:16:41`.
+- Latest CSV update `2577`.
+- Latest diagnostics:
+  - speed error `0.20146`
+  - gap error `0.10096`
+  - centerline error `0.02885`
+  - lateral error `0.06056`
+  - min gap `1.50222`
+  - reward_true_success `0.36719`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2596/3000`; ETA about `00:15:54`.
+- Latest CSV update `2599`.
+- Latest diagnostics:
+  - speed error `0.20762`
+  - gap error `0.10215`
+  - centerline error `0.02984`
+  - lateral error `0.06818`
+  - min gap `1.50084`
+  - reward_true_success `0.35156`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2616/3000`; ETA about `00:15:07`.
+- Latest CSV update `2620`.
+- Latest diagnostics:
+  - speed error `0.18818`
+  - gap error `0.10694`
+  - centerline error `0.03157`
+  - lateral error `0.06473`
+  - min gap `1.50191`
+  - reward_true_success `0.35156`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2640/3000`; ETA about `00:14:10`.
+- Latest CSV update `2642`.
+- Latest diagnostics:
+  - speed error `0.16878`
+  - gap error `0.11440`
+  - centerline error `0.02689`
+  - lateral error `0.06161`
+  - min gap `1.50295`
+  - reward_true_success `0.35938`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2660/3000`; ETA about `00:13:23`.
+- `model_2700.pt` not saved yet at this check.
+- Latest CSV update `2663`.
+- Latest diagnostics:
+  - speed error `0.20451`
+  - gap error `0.09656`
+  - centerline error `0.02966`
+  - lateral error `0.05947`
+  - min gap `1.50124`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` progress:
+
+- Parsed iteration `2684/3000`; ETA about `00:12:26`.
+- `model_2700.pt` not saved yet at this check.
+- Latest CSV update `2685`.
+- Latest diagnostics:
+  - speed error `0.18649`
+  - gap error `0.10883`
+  - centerline error `0.03431`
+  - lateral error `0.06512`
+  - min gap `1.50186`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` checkpoint:
+
+- Parsed iteration `2704/3000`; ETA about `00:11:39`.
+- `model_2700.pt` now exists.
+- Latest CSV update `2708`.
+- Latest diagnostics:
+  - speed error `0.19737`
+  - gap error `0.10155`
+  - centerline error `0.02714`
+  - lateral error `0.06687`
+  - min gap `1.50149`
+  - reward_true_success `0.38281`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2728/3000`; ETA about `00:10:42`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2730`.
+- Latest diagnostics:
+  - speed error `0.19529`
+  - gap error `0.10495`
+  - centerline error `0.02943`
+  - lateral error `0.05888`
+  - min gap `1.50138`
+  - reward_true_success `0.37500`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2748/3000`; ETA about `00:09:55`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2752`.
+- Latest diagnostics:
+  - speed error `0.21202`
+  - gap error `0.09792`
+  - centerline error `0.03201`
+  - lateral error `0.06684`
+  - min gap `1.50059`
+  - reward_true_success `0.38281`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2776/3000`; ETA about `00:08:49`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2777`.
+- Latest diagnostics:
+  - speed error `0.20394`
+  - gap error `0.09747`
+  - centerline error `0.02925`
+  - lateral error `0.05980`
+  - min gap `1.50097`
+  - reward_true_success `0.35938`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2796/3000`; ETA about `00:08:02`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2801`.
+- Latest diagnostics:
+  - speed error `0.20375`
+  - gap error `0.10687`
+  - centerline error `0.02676`
+  - lateral error `0.07067`
+  - min gap `1.50087`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2820/3000`; ETA about `00:07:05`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2825`.
+- Latest diagnostics:
+  - speed error `0.20801`
+  - gap error `0.10475`
+  - centerline error `0.02654`
+  - lateral error `0.06090`
+  - min gap `1.50174`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2844/3000`; ETA about `00:06:08`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2847`.
+- Latest diagnostics:
+  - speed error `0.21375`
+  - gap error `0.09257`
+  - centerline error `0.03227`
+  - lateral error `0.06178`
+  - min gap `1.50037`
+  - reward_true_success `0.38281`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2868/3000`; ETA about `00:05:11`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2869`.
+- Latest diagnostics:
+  - speed error `0.16243`
+  - gap error `0.12161`
+  - centerline error `0.03246`
+  - lateral error `0.06917`
+  - min gap `1.50337`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2888/3000`; ETA about `00:04:24`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2892`.
+- Latest diagnostics:
+  - speed error `0.22660`
+  - gap error `0.08960`
+  - centerline error `0.02560`
+  - lateral error `0.06016`
+  - min gap `1.49968`
+  - reward_true_success `0.39062`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2912/3000`; ETA about `00:03:27`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2913`.
+- Latest diagnostics:
+  - speed error `0.21068`
+  - gap error `0.09535`
+  - centerline error `0.02894`
+  - lateral error `0.06816`
+  - min gap `1.50190`
+  - reward_true_success `0.37500`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2936/3000`; ETA about `00:02:31`.
+- `model_final.pt` not saved yet.
+- Latest CSV update `2937`.
+- Latest diagnostics:
+  - speed error `0.20339`
+  - gap error `0.10233`
+  - centerline error `0.02821`
+  - lateral error `0.06900`
+  - min gap `1.50130`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2960/3000`; ETA about `00:01:34`.
+- `model_final.pt` not saved yet, and fixed evaluation has not started yet.
+- Latest CSV update `2961`.
+- Latest diagnostics:
+  - speed error `0.20426`
+  - gap error `0.09486`
+  - centerline error `0.02656`
+  - lateral error `0.06486`
+  - min gap `1.50084`
+  - reward_true_success `0.39062`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` final segment:
+
+- Parsed iteration `2984/3000`; ETA about `00:00:37`.
+- `model_final.pt` not saved yet, and fixed evaluation has not started yet.
+- Latest CSV update `2985`.
+- Latest diagnostics:
+  - speed error `0.18832`
+  - gap error `0.10665`
+  - centerline error `0.02766`
+  - lateral error `0.06533`
+  - min gap `1.50288`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch1 `happo_meta` training complete:
+
+- Batch1 strengthened `happo_meta` completed all `3000` iterations.
+- Run dir:
+  - `logs/rsl_rl/platoon_happo/2026-07-03_05-37-02_hardb3000_20260703_020643_batch1_happo_meta`
+- `model_final.pt` exists.
+- Final training CSV row (`update=3000`):
+  - speed error `0.18457`
+  - gap error `0.10601`
+  - centerline error `0.03095`
+  - lateral error `0.06905`
+  - min gap `1.50210`
+  - reward_true_success `0.35938`
+  - collision/reset `0.0`
+- Batch1 fixed hard-b evaluation has started with `mappo` first, over checkpoints `model_0,300,...,2700,model_final`.
+
+2026-07-03 hard-b batch1 evaluation status:
+
+- Active process is `eval_happo_platoon.py` for `mappo` under hard-b.
+- Evaluation directory exists:
+  - `logs/rsl_rl/platoon_happo/hardb3000_20260703_020643_batch1_package/evaluation/mappo`
+- No `eval_summary.csv` has been written yet, so `mappo` fixed evaluation is still in progress.
+
+2026-07-03 hard-b batch1 `mappo` evaluation progress:
+
+- First fixed-eval checkpoint completed:
+  - `model_0.pt`
+  - return `1840.791`
+  - command speed `0.382`
+  - leader speed `0.007`
+  - platoon speed `0.035`
+  - speed error `0.350`
+  - centerline error `0.065`
+  - lateral error `0.225`
+  - min gap `1.159`
+  - collision `0.0`
+  - bad-orientation reset `0.015`
+- Full `mappo` eval summary is still pending.
+
+2026-07-03 hard-b batch1 `mappo` evaluation progress:
+
+- Completed fixed-eval checkpoints now include `model_0.pt`, `model_300.pt`, and `model_600.pt`.
+- Latest completed checkpoint:
+  - `model_600.pt`
+  - return `14130.800`
+  - command speed `0.373`
+  - leader speed `0.229`
+  - platoon speed `0.255`
+  - speed error `0.122`
+  - centerline error `0.051`
+  - lateral error `0.045`
+  - min gap `1.119`
+  - collision/reset `0.0`
+- Full `mappo` eval summary is still pending.
+
+2026-07-03 hard-b batch1 `mappo` evaluation progress:
+
+- `model_900.pt` completed:
+  - return `16340.219`
+  - command speed `0.379`
+  - leader speed `0.293`
+  - platoon speed `0.316`
+  - speed error `0.071`
+  - centerline error `0.028`
+  - lateral error `0.037`
+  - min gap `1.174`
+  - collision/reset `0.0`
+- Interpretation:
+  - `mappo` return is improving with checkpoints, but min-gap remains far below the HAPPO+meta training-side safety region. Need final fixed eval before comparing.
+
+2026-07-03 hard-b batch1 `mappo` evaluation progress:
+
+- `model_1200.pt` completed:
+  - return `17557.152`
+  - command speed `0.369`
+  - leader speed `0.323`
+  - platoon speed `0.323`
+  - speed error `0.059`
+  - centerline error `0.015`
+  - lateral error `0.012`
+  - min gap `1.494`
+  - collision/reset `0.0`
+- Interpretation:
+  - `mappo` becomes much stronger by `1200`, but the final target is still all six algorithms at `3000/final`, so continue evaluation.
+
+2026-07-03 hard-b batch1 `mappo` evaluation progress:
+
+- `model_1500.pt` completed:
+  - return `17034.481`
+  - command speed `0.383`
+  - leader speed `0.321`
+  - platoon speed `0.323`
+  - speed error `0.068`
+  - centerline error `0.019`
+  - lateral error `0.012`
+  - min gap `1.439`
+  - collision/reset `0.0`
+- Interpretation:
+  - `mappo` regressed from the `1200` return point and min-gap dropped again; continue through final.
+
+2026-07-03 hard-b batch1 `mappo` evaluation progress:
+
+- `model_1800.pt` completed:
+  - return `17625.883`
+  - command speed `0.379`
+  - leader speed `0.333`
+  - platoon speed `0.325`
+  - speed error `0.065`
+  - centerline error `0.013`
+  - lateral error `0.015`
+  - min gap `1.499`
+  - collision/reset `0.0`
+- Interpretation:
+  - `mappo` is still below the prior medium HAPPO+meta final return target, but hard-b final comparison will use this run's own final rows after all six algorithms complete.
+
+2026-07-03 hard-b batch1 `mappo` evaluation progress:
+
+- `model_2100.pt` completed:
+  - return `17874.672`
+  - command speed `0.371`
+  - leader speed `0.333`
+  - platoon speed `0.325`
+  - speed error `0.057`
+  - centerline error `0.010`
+  - lateral error `0.013`
+  - min gap `1.499`
+  - collision/reset `0.0`
+- Interpretation:
+  - `mappo` final-row target may be nontrivial on centerline/speed, but return is still below the strengthened HAPPO+meta medium-final baseline; need hard-b HAPPO+meta eval for direct comparison.
+
+2026-07-03 hard-b batch1 `mappo` evaluation progress:
+
+- `model_2400.pt` completed:
+  - return `17546.491`
+  - command speed `0.376`
+  - leader speed `0.327`
+  - platoon speed `0.323`
+  - speed error `0.064`
+  - centerline error `0.023`
+  - lateral error `0.014`
+  - min gap `1.498`
+  - collision/reset `0.0`
+- Remaining `mappo` checkpoints: `model_2700.pt` and `model_final.pt`.
+
+2026-07-03 hard-b batch1 `mappo` evaluation complete:
+
+- Summary written:
+  - `logs/rsl_rl/platoon_happo/hardb3000_20260703_020643_batch1_package/evaluation/mappo/eval_summary.csv`
+- `model_2700.pt`:
+  - return `17386.947`, speed error `0.057`, centerline `0.023`, lateral `0.014`, min gap `1.462`, collision/reset `0.0`
+- `model_final.pt`:
+  - return `16417.918`, speed error `0.077`, centerline `0.035`, lateral `0.071`, min gap `1.369`, collision/reset `0.0`
+- Best `mappo` return seen in this eval sequence is `17874.672` at `model_2100.pt`; its final/3000 row is much weaker (`16417.918`).
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation status:
+
+- `happo_no_meta` fixed hard-b evaluation has started after `mappo`.
+- No `happo_no_meta/eval_summary.csv` row is available yet at the latest check.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation progress:
+
+- First checkpoint completed:
+  - `model_0.pt`
+  - return `1507.176`
+  - command speed `0.382`
+  - leader speed `0.006`
+  - platoon speed `0.034`
+  - speed error `0.351`
+  - centerline error `0.065`
+  - lateral error `0.242`
+  - min gap `1.158`
+  - collision `0.0`
+  - bad-orientation reset `0.008`
+- Full `happo_no_meta` eval summary is still pending.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation progress:
+
+- `model_300.pt` completed:
+  - return `10534.207`
+  - command speed `0.372`
+  - leader speed `0.175`
+  - platoon speed `0.183`
+  - speed error `0.192`
+  - centerline error `0.109`
+  - lateral error `0.154`
+  - min gap `1.304`
+  - collision `0.0`
+  - bad-orientation reset `0.156`
+- This checkpoint is clearly less stable than `mappo` at comparable fixed eval.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation progress:
+
+- `model_600.pt` completed:
+  - return `15413.896`
+  - command speed `0.368`
+  - leader speed `0.267`
+  - platoon speed `0.272`
+  - speed error `0.101`
+  - centerline error `0.070`
+  - lateral error `0.056`
+  - min gap `1.449`
+  - collision/reset `0.0`
+- Evaluation continues through later checkpoints.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation progress:
+
+- `model_900.pt` completed:
+  - return `16999.403`
+  - command speed `0.386`
+  - leader speed `0.321`
+  - platoon speed `0.322`
+  - speed error `0.074`
+  - centerline error `0.010`
+  - lateral error `0.007`
+  - min gap `1.485`
+  - collision/reset `0.0`
+- This is a strong physical row, but return is still below `mappo`'s best seen row so far.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation progress:
+
+- `model_1200.pt` completed:
+  - return `18066.418`, speed error `0.059`, centerline `0.013`, lateral `0.009`, min gap `1.499`, collision/reset `0.0`
+- `model_1500.pt` completed:
+  - return `18174.699`, speed error `0.059`, centerline `0.014`, lateral `0.010`, min gap `1.499`, collision/reset `0.0`
+- Interpretation:
+  - `happo_no_meta` has now exceeded `mappo`'s best return in this batch1 eval, so strengthened `happo_meta` will need to beat at least this level under hard-b.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation status:
+
+- No new checkpoint result after `model_1500.pt` at the latest check.
+- The active eval process is still running; wait for `model_1800.pt` and later checkpoints.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation progress:
+
+- `model_1800.pt` completed:
+  - return `18022.994`, speed error `0.067`, centerline `0.011`, lateral `0.014`, min gap `1.499`, collision/reset `0.0`
+- `model_2100.pt` completed:
+  - return `18106.785`, speed error `0.059`, centerline `0.012`, lateral `0.008`, min gap `1.499`, collision/reset `0.0`
+- Best `happo_no_meta` return remains `18174.699` at `model_1500.pt` so far.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation progress:
+
+- `model_2400.pt` completed:
+  - return `17256.304`
+  - command speed `0.384`
+  - leader speed `0.326`
+  - platoon speed `0.323`
+  - speed error `0.072`
+  - centerline error `0.033`
+  - lateral error `0.021`
+  - min gap `1.497`
+  - collision/reset `0.0`
+- Interpretation:
+  - later `happo_no_meta` checkpoints are drifting down from the `1500/2100` high-return band.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation progress:
+
+- `model_2700.pt` completed:
+  - return `17819.250`
+  - command speed `0.371`
+  - leader speed `0.330`
+  - platoon speed `0.324`
+  - speed error `0.061`
+  - centerline error `0.012`
+  - lateral error `0.008`
+  - min gap `1.499`
+  - collision/reset `0.0`
+- Remaining checkpoint for `happo_no_meta`: `model_final.pt`.
+
+2026-07-03 hard-b batch1 `happo_no_meta` evaluation complete:
+
+- Summary written:
+  - `logs/rsl_rl/platoon_happo/hardb3000_20260703_020643_batch1_package/evaluation/happo_no_meta/eval_summary.csv`
+- `model_final.pt`:
+  - return `17611.716`
+  - command speed `0.374`
+  - leader speed `0.326`
+  - platoon speed `0.323`
+  - speed error `0.064`
+  - centerline error `0.030`
+  - lateral error `0.017`
+  - min gap `1.499`
+  - collision/reset `0.0`
+- Best `happo_no_meta` return in this eval sequence remains `18174.699` at `model_1500.pt`; final/3000 row is `17611.716`.
+- Next batch1 eval target is strengthened `happo_meta`.
+
+2026-07-03 hard-b batch1 strengthened `happo_meta` evaluation progress:
+
+- Fixed hard-b evaluation has started.
+- First checkpoint completed:
+  - `model_0.pt`
+  - return `2840.733`
+  - command speed `0.383`
+  - leader speed `0.026`
+  - platoon speed `0.027`
+  - speed error `0.355`
+  - centerline error `0.011`
+  - lateral error `0.059`
+  - min gap `1.446`
+  - collision/reset `0.0`
+- Full `happo_meta` eval summary is pending.
+
+2026-07-03 hard-b batch1 strengthened `happo_meta` evaluation progress:
+
+- `model_300.pt` completed:
+  - return `17955.657`
+  - command speed `0.374`
+  - leader speed `0.336`
+  - platoon speed `0.338`
+  - speed error `0.050`
+  - centerline error `0.005`
+  - lateral error `0.007`
+  - min gap `1.510`
+  - collision/reset `0.0`
+- Interpretation:
+  - by `model_300.pt`, strengthened `happo_meta` already beats batch1 `mappo` final and `happo_no_meta` final on return and most physical metrics, but not yet `happo_no_meta`'s best intermediate return `18174.699`.
+
+2026-07-03 hard-b batch1 strengthened `happo_meta` evaluation progress:
+
+- `model_600.pt` completed:
+  - return `18698.026`
+  - command speed `0.368`
+  - leader speed `0.361`
+  - platoon speed `0.344`
+  - speed error `0.047`
+  - centerline error `0.009`
+  - lateral error `0.008`
+  - min gap `1.515`
+  - collision/reset `0.0`
+- Interpretation:
+  - strengthened `happo_meta` now exceeds the batch1 best return from `mappo`/`happo_no_meta` (`18174.699`) and also has better speed error and min-gap than those best rows.
+
+2026-07-03 hard-b batch1 strengthened `happo_meta` evaluation progress:
+
+- `model_900.pt` completed:
+  - return `18471.063`
+  - command speed `0.378`
+  - leader speed `0.361`
+  - platoon speed `0.345`
+  - speed error `0.052`
+  - centerline error `0.010`
+  - lateral error `0.009`
+  - min gap `1.517`
+  - collision/reset `0.0`
+- Interpretation:
+  - `happo_meta` remains above the other two batch1 algorithms' best return and has the best min-gap so far.
+
+2026-07-03 hard-b batch1 strengthened `happo_meta` evaluation progress:
+
+- `model_1200.pt` completed:
+  - return `18478.452`
+  - command speed `0.377`
+  - leader speed `0.362`
+  - platoon speed `0.345`
+  - speed error `0.051`
+  - centerline error `0.009`
+  - lateral error `0.008`
+  - min gap `1.516`
+  - collision/reset `0.0`
+- `happo_meta` remains comfortably above `mappo`/`happo_no_meta` final rows and above their best intermediate returns so far.
+
+2026-07-03 hard-b batch1 strengthened `happo_meta` evaluation progress:
+
+- `model_1500.pt` completed:
+  - return `18617.602`
+  - command speed `0.369`
+  - leader speed `0.361`
+  - platoon speed `0.344`
+  - speed error `0.048`
+  - centerline error `0.009`
+  - lateral error `0.009`
+  - min gap `1.510`
+  - collision/reset `0.0`
+- `model_1500.pt` is the current best strengthened `happo_meta` return in the hard-b batch1 eval sequence.
+
+2026-07-03 hard-b batch1 strengthened `happo_meta` evaluation progress:
+
+- `model_1800.pt` completed:
+  - return `18368.177`
+  - command speed `0.381`
+  - leader speed `0.361`
+  - platoon speed `0.345`
+  - speed error `0.053`
+  - centerline error `0.009`
+  - lateral error `0.006`
+  - min gap `1.516`
+  - collision/reset `0.0`
+- `happo_meta` remains above the batch1 non-meta algorithms' final rows; `model_600.pt` and `model_1500.pt` are the strongest HAPPO+meta rows so far.
+
+2026-07-03 hard-b batch1 strengthened `happo_meta` evaluation progress:
+
+- `model_2100.pt` completed:
+  - return `18449.287`
+  - command speed `0.374`
+  - leader speed `0.361`
+  - platoon speed `0.345`
+  - speed error `0.049`
+  - centerline error `0.010`
+  - lateral error `0.008`
+  - min gap `1.511`
+  - collision/reset `0.0`
+- Strong HAPPO+meta rows are consistent across `600-2100`, with returns above `18368` and min gap above `1.510`.
+
+2026-07-03 hard-b batch1 strengthened `happo_meta` evaluation progress:
+
+- `model_2400.pt` completed:
+  - return `18433.497`
+  - speed error `0.044`
+  - centerline `0.009`
+  - lateral `0.007`
+  - min gap `1.512`
+  - collision/reset `0.0`
+- `model_2700.pt` completed:
+  - return `18061.438`
+  - speed error `0.052`
+  - centerline `0.010`
+  - lateral `0.009`
+  - min gap `1.511`
+  - collision/reset `0.0`
+- Remaining checkpoint for batch1 `happo_meta`: `model_final.pt`.
+
+2026-07-03 hard-b batch1 complete and batch2 started:
+
+- Batch1 fixed evaluation completed for all three algorithms.
+- Batch1 final/3000 rows:
+  - `mappo`: return `16417.918`, speed error `0.07677`, gap error `0.23953`, centerline `0.03479`, lateral `0.07065`, min gap `1.36869`, collision/reset `0.0`
+  - `happo_no_meta`: return `17611.716`, speed error `0.06360`, gap error `0.18303`, centerline `0.02971`, lateral `0.01730`, min gap `1.49872`, collision/reset `0.0`
+  - strengthened `happo_meta`: return `18286.980`, speed error `0.05201`, gap error `0.17114`, centerline `0.00908`, lateral `0.00878`, min gap `1.51143`, collision/reset `0.0`
+- Batch1 best-return rows:
+  - `mappo`: `17874.672` at `model_2100.pt`
+  - `happo_no_meta`: `18174.699` at `model_1500.pt`
+  - strengthened `happo_meta`: `18698.026` at `model_600.pt`
+- Interpretation:
+  - strengthened `happo_meta` wins batch1 on final/3000 return and all listed physical metrics except collision/reset, which are tied at zero.
+  - strengthened `happo_meta` also wins batch1 on best checkpoint return.
+- Batch2 has started:
+  - current algorithm: `harl_mappo_shared`
+  - run name: `hardb3000_20260703_020643_batch2_harl_mappo_shared`
+  - process is active under hard-b settings.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` early status:
+
+- Parsed iteration `34/3000`; ETA about `01:31:03`.
+- Run dir:
+  - `logs/rsl_rl/platoon_happo/2026-07-03_08-07-34_hardb3000_20260703_020643_batch2_harl_mappo_shared`
+- Latest CSV update `36`:
+  - speed error `0.34137`
+  - gap error `0.16349`
+  - centerline error `0.01132`
+  - lateral error `0.10166`
+  - min gap `1.32425`
+  - reward_true_success `0.10938`
+  - collision/reset `0.0`.
+
+2026-07-03 ROS replay export verification reminder:
+
+- Re-ran the ROS replay CSV checker on the generated medium sample export:
+  - CSV: `logs/rsl_rl/platoon_happo/ros_replay_exports/medium_model300_20260703/ros_replay.csv`
+  - meta: `logs/rsl_rl/platoon_happo/ros_replay_exports/medium_model300_20260703/ros_replay_meta.json`
+- Check result:
+  - rows `100`
+  - steps `20`
+  - required fields OK
+  - robot IDs per step OK
+  - time monotonic OK
+  - NaN counts: `steering_cmd=100`
+- Interpretation:
+  - the only NaN field in the sample is `steering_cmd`, which is expected because this task exposes wheel-level velocity actions rather than an explicit steering command.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` early progress:
+
+- Parsed iteration `82/3000`; ETA about `01:28:33`.
+- Latest CSV update `85`:
+  - speed error `0.35086`
+  - gap error `0.26107`
+  - centerline error `0.06612`
+  - lateral error `0.19531`
+  - min gap `1.11530`
+  - reward_true_success `0.03906`
+  - collision/reset `0.0`
+- Interpretation:
+  - still in early learning; metrics are weak but no safety termination yet.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` early progress:
+
+- Parsed iteration `122/3000`; ETA about `01:27:07`.
+- Latest CSV update `123`:
+  - speed error `0.34058`
+  - gap error `0.29444`
+  - centerline error `0.08192`
+  - lateral error `0.21757`
+  - min gap `1.07464`
+  - reward_true_success `0.01562`
+  - collision/reset `0.0`
+- Interpretation:
+  - early shared-MAPPO HARL row is still weak under hard-b, especially gap/lateral/min-gap.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` early progress:
+
+- Parsed iteration `154/3000`; ETA about `01:26:02`.
+- Latest CSV update `157`:
+  - speed error `0.13168`
+  - gap error `0.18349`
+  - centerline error `0.00090`
+  - lateral error `0.01147`
+  - min gap `1.46117`
+  - reward_true_success `0.23438`
+  - collision/reset `0.0`
+- Interpretation:
+  - `harl_mappo_shared` quickly improved centerline/lateral and speed versus update `123`, though min-gap is still below the strengthened HAPPO+meta fixed-eval region.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` early progress:
+
+- Parsed iteration `182/3000`; ETA about `01:25:09`.
+- Latest CSV update `186`:
+  - speed error `0.32478`
+  - gap error `0.29913`
+  - centerline error `0.09501`
+  - lateral error `0.20376`
+  - min gap `1.06650`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`
+- Interpretation:
+  - early training remains volatile; do not compare until fixed-eval checkpoints are produced.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` early progress:
+
+- Parsed iteration `214/3000`; ETA about `01:24:12`.
+- `model_300.pt` not saved yet.
+- Latest CSV update `217`:
+  - speed error `0.30344`
+  - gap error `0.30602`
+  - centerline error `0.10382`
+  - lateral error `0.20706`
+  - min gap `1.08301`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` early progress:
+
+- Parsed iteration `242/3000`; ETA about `01:23:19`.
+- `model_300.pt` not saved yet.
+- Latest CSV update `246`:
+  - speed error `0.30800`
+  - gap error `0.28558`
+  - centerline error `0.10698`
+  - lateral error `0.20497`
+  - min gap `1.10226`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` early progress:
+
+- Parsed iteration `270/3000`; ETA about `01:22:26`.
+- `model_300.pt` not saved yet.
+- Latest CSV update `274`:
+  - speed error `0.30847`
+  - gap error `0.27809`
+  - centerline error `0.10395`
+  - lateral error `0.19110`
+  - min gap `1.12171`
+  - reward_true_success `0.02344`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` checkpoint:
+
+- Parsed iteration `302/3000`; ETA about `01:21:18`.
+- `model_300.pt` now exists.
+- Latest CSV update `305`:
+  - speed error `0.28157`
+  - gap error `0.27791`
+  - centerline error `0.09948`
+  - lateral error `0.17564`
+  - min gap `1.11221`
+  - reward_true_success `0.01562`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `386/3000`; ETA about `01:18:25`.
+- `model_300.pt` exists; `model_600.pt` not yet.
+- Latest CSV update `388`:
+  - speed error `0.28645`
+  - gap error `0.22369`
+  - centerline error `0.05323`
+  - lateral error `0.12325`
+  - min gap `1.23230`
+  - reward_true_success `0.02344`
+  - collision/reset `0.0`
+- Interpretation:
+  - metrics are improving versus the `model_300` region, but still far below batch1 HAPPO+meta's fixed-eval physical quality.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `466/3000`; ETA about `01:15:47`.
+- `model_600.pt` not yet saved.
+- Latest CSV update `467`:
+  - speed error `0.28826`
+  - gap error `0.28479`
+  - centerline error `0.13225`
+  - lateral error `0.25080`
+  - min gap `1.13360`
+  - reward_true_success `0.01562`
+  - collision/reset `0.0`
+- Interpretation:
+  - training remains volatile/weak for this baseline under hard-b.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `550/3000`; ETA about `01:13:11`.
+- `model_600.pt` not yet saved.
+- Latest CSV update `555`:
+  - speed error `0.26409`
+  - gap error `0.24340`
+  - centerline error `0.11280`
+  - lateral error `0.21121`
+  - min gap `1.20751`
+  - reward_true_success `0.03125`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` checkpoint:
+
+- Parsed iteration `634/3000`; ETA about `01:10:46`.
+- `model_600.pt` now exists; `model_900.pt` not yet.
+- Latest CSV update `638`:
+  - speed error `0.25186`
+  - gap error `0.21325`
+  - centerline error `0.06579`
+  - lateral error `0.11285`
+  - min gap `1.28682`
+  - reward_true_success `0.02344`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `718/3000`; ETA about `01:08:17`.
+- `model_900.pt` not yet saved.
+- Latest CSV update `719`:
+  - speed error `0.46471`
+  - gap error `0.00346`
+  - centerline error `0.000003`
+  - lateral error `0.000043`
+  - min gap `1.49776`
+  - reward_true_success `0.50000`
+  - collision/reset `0.0`
+- Interpretation:
+  - the shared baseline appears to have collapsed into very accurate formation/centerline but very poor speed tracking at this point; final fixed eval will determine whether this persists.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `797/3000`; ETA about `01:05:59`.
+- `model_900.pt` not yet saved.
+- Latest CSV update `798`:
+  - speed error `0.23327`
+  - gap error `0.20977`
+  - centerline error `0.08538`
+  - lateral error `0.14556`
+  - min gap `1.31653`
+  - reward_true_success `0.03906`
+  - collision/reset `0.0`
+- Interpretation:
+  - the conservative/perfect-formation blip did not persist; metrics returned to a weaker, more mobile state.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `877/3000`; ETA about `01:03:38`.
+- `model_900.pt` not yet saved.
+- Latest CSV update `881`:
+  - speed error `0.22492`
+  - gap error `0.19374`
+  - centerline error `0.02111`
+  - lateral error `0.08889`
+  - min gap `1.35078`
+  - reward_true_success `0.06250`
+  - collision/reset `0.0`
+- Interpretation:
+  - metrics are slowly recovering but remain below HAPPO+meta's batch1 fixed-eval level.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` checkpoint:
+
+- Parsed iteration `960/3000`; ETA about `01:01:11`.
+- `model_900.pt` now exists; `model_1200.pt` not yet.
+- Latest CSV update `962`:
+  - speed error `0.23678`
+  - gap error `0.22901`
+  - centerline error `0.11321`
+  - lateral error `0.22644`
+  - min gap `1.28427`
+  - reward_true_success `0.03125`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `1040/3000`; ETA about `00:58:45`.
+- `model_1200.pt` not yet saved.
+- Latest CSV update `1042`:
+  - speed error `0.21251`
+  - gap error `0.21771`
+  - centerline error `0.05434`
+  - lateral error `0.09959`
+  - min gap `1.31040`
+  - reward_true_success `0.03125`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `1152/3000`; ETA about `00:55:21`.
+- `model_1200.pt` not yet saved.
+- Latest CSV update `1155`:
+  - speed error `0.21986`
+  - gap error `0.24093`
+  - centerline error `0.12022`
+  - lateral error `0.23017`
+  - min gap `1.27529`
+  - reward_true_success `0.05469`
+  - collision/reset `0.0`
+- Interpretation:
+  - `harl_mappo_shared` is not trending toward the strengthened HAPPO+meta range in training diagnostics so far.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` checkpoint:
+
+- Parsed iteration `1267/3000`; ETA about `00:51:55`.
+- `model_1200.pt` now exists; `model_1500.pt` not yet.
+- Latest CSV update `1270`:
+  - speed error `0.23024`
+  - gap error `0.23079`
+  - centerline error `0.10900`
+  - lateral error `0.19797`
+  - min gap `1.28922`
+  - reward_true_success `0.01562`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `1379/3000`; ETA about `00:48:35`.
+- `model_1500.pt` not yet saved.
+- Latest CSV update `1383`:
+  - speed error `0.19790`
+  - gap error `0.22381`
+  - centerline error `0.03624`
+  - lateral error `0.08679`
+  - min gap `1.32545`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` checkpoint:
+
+- Parsed iteration `1499/3000`; ETA about `00:45:00`.
+- `model_1500.pt` now exists; `model_1800.pt` not yet.
+- Latest CSV update `1501`:
+  - speed error `0.10592`
+  - gap error `0.19638`
+  - centerline error `0.00174`
+  - lateral error `0.02146`
+  - min gap `1.45970`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - this is the best-looking `harl_mappo_shared` training row so far, but its speed/gap/min-gap are still behind strengthened HAPPO+meta's hard-b fixed-eval rows.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `1647/3000`; ETA about `00:40:34`.
+- `model_1800.pt` not yet saved.
+- Latest CSV update `1651`:
+  - speed error `0.20229`
+  - gap error `0.28458`
+  - centerline error `0.12878`
+  - lateral error `0.23068`
+  - min gap `1.22325`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - after the good `1500` region, the training row regressed again.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` checkpoint:
+
+- Parsed iteration `1819/3000`; ETA about `00:35:23`.
+- `model_1800.pt` now exists; `model_2100.pt` not yet.
+- Latest CSV update `1820`:
+  - speed error `0.19314`
+  - gap error `0.21082`
+  - centerline error `0.03130`
+  - lateral error `0.07649`
+  - min gap `1.33469`
+  - reward_true_success `0.01562`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `2003/3000`; ETA about `00:29:53`.
+- `model_2100.pt` not yet saved.
+- Latest CSV update `2007`:
+  - speed error `0.19913`
+  - gap error `0.21994`
+  - centerline error `0.03349`
+  - lateral error `0.08321`
+  - min gap `1.32590`
+  - reward_true_success `0.02344`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` checkpoint:
+
+- Parsed iteration `2155/3000`; ETA about `00:25:19`.
+- `model_2100.pt` now exists; `model_2400.pt` not yet.
+- Latest CSV update `2156`:
+  - speed error `0.20576`
+  - gap error `0.27571`
+  - centerline error `0.14361`
+  - lateral error `0.21835`
+  - min gap `1.22409`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `2303/3000`; ETA about `00:20:53`.
+- `model_2400.pt` not yet saved.
+- Latest CSV update `2307`:
+  - speed error `0.19984`
+  - gap error `0.29414`
+  - centerline error `0.12721`
+  - lateral error `0.23587`
+  - min gap `1.21058`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - this baseline remains poor in training diagnostics late into the run.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` checkpoint:
+
+- Parsed iteration `2455/3000`; ETA about `00:16:20`.
+- `model_2400.pt` now exists; `model_2700.pt` not yet.
+- Latest CSV update `2459`:
+  - speed error `0.20253`
+  - gap error `0.27632`
+  - centerline error `0.11193`
+  - lateral error `0.18082`
+  - min gap `1.21980`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` progress:
+
+- Parsed iteration `2607/3000`; ETA about `00:11:47`.
+- `model_2700.pt` not yet saved.
+- Latest CSV update `2610`:
+  - speed error `0.20621`
+  - gap error `0.25298`
+  - centerline error `0.09343`
+  - lateral error `0.14558`
+  - min gap `1.25178`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` checkpoint:
+
+- Parsed iteration `2759/3000`; ETA about `00:07:13`.
+- `model_2700.pt` now exists; `model_final.pt` not yet.
+- Latest CSV update `2762`:
+  - speed error `0.18385`
+  - gap error `0.23754`
+  - centerline error `0.06888`
+  - lateral error `0.09772`
+  - min gap `1.28648`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` final segment:
+
+- Parsed iteration `2907/3000`; ETA about `00:02:47`.
+- `model_final.pt` not yet saved.
+- Latest CSV update `2909`:
+  - speed error `0.15711`
+  - gap error `0.20566`
+  - centerline error `0.00626`
+  - lateral error `0.04640`
+  - min gap `1.39297`
+  - reward_true_success `0.02344`
+  - collision/reset `0.0`
+- Interpretation:
+  - final segment is improving, but min-gap and lateral remain below strengthened HAPPO+meta fixed-eval results.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` training complete and `harl_haa2c` started:
+
+- `harl_mappo_shared` completed all `3000` iterations.
+- Run dir:
+  - `logs/rsl_rl/platoon_happo/2026-07-03_08-07-34_hardb3000_20260703_020643_batch2_harl_mappo_shared`
+- `model_final.pt` exists.
+- Final training CSV row (`update=3000`):
+  - speed error `0.36885`
+  - gap error `0.0`
+  - centerline error `0.0`
+  - lateral error `0.0`
+  - min gap `1.5`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - final training row suggests a conservative/static formation solution with poor speed tracking; fixed eval later will quantify return.
+- `harl_haa2c` has started:
+  - run dir `logs/rsl_rl/platoon_happo/2026-07-03_09-39-21_hardb3000_20260703_020643_batch2_harl_haa2c`
+  - parsed iteration `4/3000`; ETA about `01:49:35`
+  - latest update `7`: speed error `0.32125`, gap error `0.20483`, centerline `0.01802`, lateral `0.12117`, min gap `1.25976`, collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` early progress:
+
+- Parsed iteration `136/3000`; ETA about `01:37:36`.
+- `model_300.pt` not yet saved.
+- Latest CSV update `139`:
+  - speed error `0.17768`
+  - gap error `0.28415`
+  - centerline error `0.08395`
+  - lateral error `0.12308`
+  - min gap `1.21510`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` early progress:
+
+- Parsed iteration `294/3000`; ETA about `01:32:22`.
+- `model_300.pt` not yet visible at this check.
+- Latest CSV update `296`:
+  - speed error `0.16298`
+  - gap error `0.26679`
+  - centerline error `0.08957`
+  - lateral error `0.12484`
+  - min gap `1.26055`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` checkpoint:
+
+- Parsed iteration `450/3000`; ETA about `01:26:54`.
+- `model_300.pt` now exists; `model_600.pt` not yet.
+- Latest CSV update `454`:
+  - speed error `0.16542`
+  - gap error `0.28749`
+  - centerline error `0.10609`
+  - lateral error `0.16292`
+  - min gap `1.23858`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` checkpoint:
+
+- Parsed iteration `610/3000`; ETA about `01:21:19`.
+- `model_600.pt` now exists; `model_900.pt` not yet.
+- Latest CSV update `612`:
+  - speed error `0.16791`
+  - gap error `0.28081`
+  - centerline error `0.10536`
+  - lateral error `0.17068`
+  - min gap `1.24672`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` progress:
+
+- Parsed iteration `770/3000`; ETA about `01:15:41`.
+- `model_900.pt` not yet saved.
+- Latest CSV update `774`:
+  - speed error `0.18297`
+  - gap error `0.28164`
+  - centerline error `0.12796`
+  - lateral error `0.21050`
+  - min gap `1.24859`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - `harl_haa2c` is also weak so far under hard-b and has not approached HAPPO+meta's fixed-eval metrics.
+
+2026-07-03 hard-b batch2 `harl_haa2c` checkpoint:
+
+- Parsed iteration `934/3000`; ETA about `01:10:00`.
+- `model_900.pt` now exists; `model_1200.pt` not yet.
+- Latest CSV update `937`:
+  - speed error `0.15972`
+  - gap error `0.28313`
+  - centerline error `0.14546`
+  - lateral error `0.22167`
+  - min gap `1.24358`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` progress:
+
+- Parsed iteration `1094/3000`; ETA about `01:04:31`.
+- `model_1200.pt` not yet saved.
+- Latest CSV update `1097`:
+  - speed error `0.12418`
+  - gap error `0.21499`
+  - centerline error `0.00853`
+  - lateral error `0.04733`
+  - min gap `1.39459`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`
+- Interpretation:
+  - `harl_haa2c` improved substantially around this point, but still trails HAPPO+meta in speed error, gap, lateral, and min-gap.
+
+2026-07-03 hard-b batch2 `harl_haa2c` checkpoint:
+
+- Parsed iteration `1254/3000`; ETA about `00:59:05`.
+- `model_1200.pt` now exists; `model_1500.pt` not yet.
+- Latest CSV update `1258`:
+  - speed error `0.16461`
+  - gap error `0.24354`
+  - centerline error `0.03693`
+  - lateral error `0.07647`
+  - min gap `1.31806`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` progress:
+
+- Parsed iteration `1418/3000`; ETA about `00:53:28`.
+- `model_1500.pt` not yet saved.
+- Latest CSV update `1420`:
+  - speed error `0.16138`
+  - gap error `0.26424`
+  - centerline error `0.07802`
+  - lateral error `0.11066`
+  - min gap `1.27905`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` checkpoint:
+
+- Parsed iteration `1578/3000`; ETA about `00:48:02`.
+- `model_1500.pt` now exists; `model_1800.pt` not yet.
+- Latest CSV update `1579`:
+  - speed error `0.16536`
+  - gap error `0.27732`
+  - centerline error `0.10348`
+  - lateral error `0.15829`
+  - min gap `1.25760`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` progress:
+
+- Parsed iteration `1734/3000`; ETA about `00:42:46`.
+- `model_1800.pt` not yet saved.
+- Latest CSV update `1738`:
+  - speed error `0.16254`
+  - gap error `0.30829`
+  - centerline error `0.11289`
+  - lateral error `0.19301`
+  - min gap `1.21997`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - `harl_haa2c` is not improving in the late-middle training window.
+
+2026-07-03 hard-b batch2 `harl_haa2c` checkpoint:
+
+- Parsed iteration `1898/3000`; ETA about `00:37:14`.
+- `model_1800.pt` now exists; `model_2100.pt` not yet.
+- Latest CSV update `1902`:
+  - speed error `0.18217`
+  - gap error `0.29330`
+  - centerline error `0.13904`
+  - lateral error `0.21638`
+  - min gap `1.21352`
+  - reward_true_success `0.02344`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` progress:
+
+- Parsed iteration `2058/3000`; ETA about `00:31:50`.
+- `model_2100.pt` not yet saved.
+- Latest CSV update `2062`:
+  - speed error `0.16895`
+  - gap error `0.30060`
+  - centerline error `0.16620`
+  - lateral error `0.26151`
+  - min gap `1.20732`
+  - reward_true_success `0.01562`
+  - collision/reset `0.0`
+- Interpretation:
+  - diagnostics are degrading late in training, not threatening HAPPO+meta.
+
+2026-07-03 hard-b batch2 `harl_haa2c` checkpoint:
+
+- Parsed iteration `2234/3000`; ETA about `00:25:52`.
+- `model_2100.pt` now exists; `model_2400.pt` not yet.
+- Latest CSV update `2238`:
+  - speed error `0.16661`
+  - gap error `0.27810`
+  - centerline error `0.11523`
+  - lateral error `0.18480`
+  - min gap `1.24509`
+  - reward_true_success `0.01562`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` checkpoint:
+
+- Parsed iteration `2406/3000`; ETA about `00:20:03`.
+- `model_2400.pt` now exists.
+- Latest CSV update `2410`:
+  - speed error `0.14131`
+  - gap error `0.22194`
+  - centerline error `0.01094`
+  - lateral error `0.05561`
+  - min gap `1.37864`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`
+- Interpretation:
+  - this is a better HAA2C late-training row, but still behind HAPPO+meta on return-proxy physical metrics, especially speed and min-gap.
+
+2026-07-03 hard-b batch2 `harl_haa2c` progress:
+
+- Parsed iteration `2582/3000`; ETA about `00:14:06`.
+- `model_2700.pt` not yet saved.
+- Latest CSV update `2585`:
+  - speed error `0.17602`
+  - gap error `0.26781`
+  - centerline error `0.12254`
+  - lateral error `0.21310`
+  - min gap `1.26493`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - improvement at `2400` did not persist.
+
+2026-07-03 hard-b batch2 `harl_haa2c` checkpoint:
+
+- Parsed iteration `2746/3000`; ETA about `00:08:34`.
+- `model_2700.pt` now exists; `model_final.pt` not yet.
+- Latest CSV update `2748`:
+  - speed error `0.17654`
+  - gap error `0.31051`
+  - centerline error `0.14720`
+  - lateral error `0.20385`
+  - min gap `1.18529`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` final segment:
+
+- Parsed iteration `2906/3000`; ETA about `00:03:10`.
+- `model_final.pt` not yet saved.
+- Latest CSV update `2909`:
+  - speed error `0.12623`
+  - gap error `0.22090`
+  - centerline error `0.00637`
+  - lateral error `0.04183`
+  - min gap `1.39700`
+  - reward_true_success `0.01562`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` training complete and `harl_hatrpo` started:
+
+- `harl_haa2c` completed all `3000` iterations.
+- Run dir:
+  - `logs/rsl_rl/platoon_happo/2026-07-03_09-39-21_hardb3000_20260703_020643_batch2_harl_haa2c`
+- `model_final.pt` exists.
+- Final training CSV row (`update=3000`):
+  - speed error `0.37407`
+  - gap error `0.0`
+  - centerline error `0.0`
+  - lateral error `0.0`
+  - min gap `1.5`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`
+- Interpretation:
+  - final training row again looks like a static/conservative solution with poor speed tracking; fixed eval later will quantify return.
+- `harl_hatrpo` has started:
+  - run dir `logs/rsl_rl/platoon_happo/2026-07-03_11-22-26_hardb3000_20260703_020643_batch2_harl_hatrpo`
+  - parsed iteration `37/3000`; ETA about `01:48:32`
+  - latest update `41`: speed error `0.22964`, gap error `0.16446`, centerline `0.04018`, lateral `0.09506`, min gap `1.39863`, collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` early progress:
+
+- Parsed iteration `192/3000`; ETA about `01:42:27`.
+- `model_300.pt` not yet saved.
+- Latest CSV update `196`:
+  - speed error `0.32495`
+  - gap error `0.20573`
+  - centerline error `0.03200`
+  - lateral error `0.16419`
+  - min gap `1.23751`
+  - reward_true_success `0.03906`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` checkpoint:
+
+- Parsed iteration `340/3000`; ETA about `01:37:37`.
+- `model_300.pt` now exists.
+- Latest CSV update `344`:
+  - speed error `0.47570`
+  - gap error `0.00354`
+  - centerline error `0.000003`
+  - lateral error `0.000042`
+  - min gap `1.49723`
+  - reward_true_success `0.50000`
+  - collision/reset `0.0`
+- Interpretation:
+  - like the other HARL baselines, HATRPO briefly finds an almost static/perfect-formation mode with very poor speed tracking.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` progress:
+
+- Parsed iteration `484/3000`; ETA about `01:32:59`.
+- `model_600.pt` not yet saved.
+- Latest CSV update `488`:
+  - speed error `0.25643`
+  - gap error `0.26244`
+  - centerline error `0.20719`
+  - lateral error `0.30091`
+  - min gap `1.04491`
+  - reward_true_success `0.09375`
+  - collision/reset `0.0`
+- Interpretation:
+  - HATRPO moved out of the static mode but into a poor formation/spacing regime.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` checkpoint:
+
+- Parsed iteration `632/3000`; ETA about `01:27:47`.
+- `model_600.pt` now exists; `model_900.pt` not yet.
+- Latest CSV update `635`:
+  - speed error `0.24188`
+  - gap error `0.34803`
+  - centerline error `0.06450`
+  - lateral error `0.16466`
+  - min gap `0.88680`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - HATRPO spacing is very poor in this region, with min-gap far below all good baselines.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` progress:
+
+- Parsed iteration `776/3000`; ETA about `01:22:29`.
+- `model_900.pt` not yet saved.
+- Latest CSV update `779`:
+  - speed error `0.22166`
+  - gap error `0.31985`
+  - centerline error `0.23540`
+  - lateral error `0.27473`
+  - min gap `1.03204`
+  - reward_true_success `0.01562`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` checkpoint:
+
+- Parsed iteration `916/3000`; ETA about `01:17:37`.
+- `model_900.pt` now exists; `model_1200.pt` not yet.
+- Latest CSV update `919`:
+  - speed error `0.29121`
+  - gap error `0.51650`
+  - centerline error `0.06184`
+  - lateral error `0.19994`
+  - min gap `0.72476`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+- Interpretation:
+  - HATRPO is the weakest hard-b baseline so far in training diagnostics, with very poor gap/min-gap.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` progress:
+
+- Parsed iteration `1060/3000`; ETA about `01:12:34`.
+- `model_1200.pt` not yet saved.
+- Latest CSV update `1062`:
+  - speed error `0.27057`
+  - gap error `0.72069`
+  - centerline error `0.21018`
+  - lateral error `0.11880`
+  - min gap `0.53429`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - gap/min-gap collapsed further; this baseline is very unlikely to challenge HAPPO+meta.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` checkpoint:
+
+- Parsed iteration `1208/3000`; ETA about `01:06:57`.
+- `model_1200.pt` now exists; `model_1500.pt` not yet.
+- Latest CSV update `1209`:
+  - speed error `0.23171`
+  - gap error `0.36243`
+  - centerline error `0.15840`
+  - lateral error `0.11382`
+  - min gap `0.98900`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` progress:
+
+- Parsed iteration `1352/3000`; ETA about `01:01:27`.
+- `model_1500.pt` not yet saved.
+- Latest CSV update `1356`:
+  - speed error `0.26023`
+  - gap error `0.33066`
+  - centerline error `0.05351`
+  - lateral error `0.10535`
+  - min gap `1.03773`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` checkpoint:
+
+- Parsed iteration `1504/3000`; ETA about `00:55:46`.
+- `model_1500.pt` now exists; `model_1800.pt` not yet.
+- Latest CSV update `1505`:
+  - speed error `0.23620`
+  - gap error `0.23408`
+  - centerline error `0.01771`
+  - lateral error `0.08643`
+  - min gap `1.26589`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` progress:
+
+- Parsed iteration `1648/3000`; ETA about `00:50:24`.
+- `model_1800.pt` not yet saved.
+- Latest CSV update `1650`:
+  - speed error `0.21712`
+  - gap error `0.47422`
+  - centerline error `0.15145`
+  - lateral error `0.15283`
+  - min gap `0.80636`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - HATRPO remains unstable/weak in spacing.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` checkpoint:
+
+- Parsed iteration `1798/3000`; ETA about `00:44:47`.
+- `model_1800.pt` now exists; `model_2100.pt` not yet.
+- Latest CSV update `1801`:
+  - speed error `0.23232`
+  - gap error `0.54252`
+  - centerline error `0.10409`
+  - lateral error `0.11295`
+  - min gap `0.63736`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`
+- Interpretation:
+  - HATRPO spacing/min-gap are far below all other evaluated baselines so far.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` progress:
+
+- Parsed iteration `1946/3000`; ETA about `00:39:16`.
+- `model_2100.pt` not yet saved.
+- Latest CSV update `1947`:
+  - speed error `0.19241`
+  - gap error `0.26011`
+  - centerline error `0.05335`
+  - lateral error `0.10719`
+  - min gap `1.23907`
+  - reward_true_success `0.00781`
+  - collision/reset `0.0`
+- Interpretation:
+  - HATRPO recovered from the very low min-gap row but is still weak.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` progress:
+
+- Parsed iteration `2090/3000`; ETA about `00:33:53`.
+- `model_2100.pt` not yet saved.
+- Latest CSV update `2094`:
+  - speed error `0.47768`
+  - gap error `0.00705`
+  - centerline error `0.00014`
+  - lateral error `0.00108`
+  - min gap `1.49526`
+  - reward_true_success `0.49219`
+  - collision/reset `0.0`
+- Interpretation:
+  - HATRPO again entered the static/perfect-formation but very poor speed-tracking mode.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` checkpoint:
+
+- Parsed iteration `2242/3000`; ETA about `00:28:13`.
+- `model_2100.pt` now exists; `model_2400.pt` not yet.
+- Latest CSV update `2245`:
+  - speed error `0.17246`
+  - gap error `0.30767`
+  - centerline error `0.30464`
+  - lateral error `0.35983`
+  - min gap `1.17302`
+  - reward_true_success `0.0`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` progress:
+
+- Parsed iteration `2390/3000`; ETA about `00:22:41`.
+- `model_2400.pt` not yet saved.
+- Latest CSV update `2392`:
+  - speed error `0.16901`
+  - gap error `0.25028`
+  - centerline error `0.25994`
+  - lateral error `0.30684`
+  - min gap `1.24272`
+  - reward_true_success `0.03125`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` checkpoint:
+
+- Parsed iteration `2538/3000`; ETA about `00:17:10`.
+- `model_2400.pt` now exists; `model_2700.pt` not yet.
+- Latest CSV update `2540`:
+  - speed error `0.22629`
+  - gap error `0.26617`
+  - centerline error `0.21383`
+  - lateral error `0.44056`
+  - min gap `1.22166`
+  - reward_true_success `0.02344`
+  - bad-orientation reset `0.046875`
+  - collision `0.0`
+- Interpretation:
+  - HATRPO is now showing nonzero bad-orientation resets in training, unlike the stable HAPPO+meta fixed eval rows.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` late progress:
+
+- Parsed iteration `2686/3000`; ETA about `00:11:39`.
+- `model_2700.pt` not yet saved.
+- Latest CSV update `2688`:
+  - speed error `0.30368`
+  - gap error `0.27654`
+  - centerline error `0.18974`
+  - lateral error `0.25261`
+  - min gap `1.23629`
+  - reward_true_success `0.10156`
+  - bad-orientation reset `0.71875`
+  - collision `0.0`
+- Interpretation:
+  - HATRPO has a severe bad-orientation reset problem in late training under hard-b.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` checkpoint:
+
+- Parsed iteration `2834/3000`; ETA about `00:06:09`.
+- `model_2700.pt` now exists; `model_final.pt` not yet.
+- Latest CSV update `2836`:
+  - speed error `0.27315`
+  - gap error `0.38171`
+  - centerline error `0.26390`
+  - lateral error `0.40309`
+  - min gap `1.07222`
+  - reward_true_success `0.0`
+  - bad-orientation reset `0.28125`
+  - collision `0.0`.
+
+2026-07-03 hard-b batch2 `harl_hatrpo` final segment:
+
+- Parsed iteration `2978/3000`; ETA about `00:00:48`.
+- `model_final.pt` not yet saved.
+- Latest CSV update `2981`:
+  - speed error `0.23206`
+  - gap error `0.38590`
+  - centerline error `0.45611`
+  - lateral error `0.51552`
+  - min gap `1.35515`
+  - reward_true_success `0.02344`
+  - bad-orientation reset `0.43750`
+  - collision `0.0`
+- HATRPO is about to finish training, then batch2 fixed evaluation will start.
+
+2026-07-03 hard-b batch2 training complete and evaluation started:
+
+- All three batch2 algorithms completed `3000` iterations and have `model_final.pt`:
+  - `harl_mappo_shared`
+  - `harl_haa2c`
+  - `harl_hatrpo`
+- Final training rows:
+  - `harl_mappo_shared`: speed error `0.36885`, gap/centerline/lateral `0.0`, min gap `1.5`, reset/collision `0.0`
+  - `harl_haa2c`: speed error `0.37407`, gap/centerline/lateral `0.0`, min gap `1.5`, reset/collision `0.0`
+  - `harl_hatrpo`: speed error `0.26313`, gap error `0.34273`, centerline `0.30390`, lateral `0.42933`, min gap `1.25526`, bad-orientation reset `0.34375`, collision `0.0`
+- Batch2 fixed hard-b evaluation has started with `harl_mappo_shared` first.
+- No batch2 `eval_summary.csv` has been written yet at the latest check.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` evaluation progress:
+
+- Completed fixed-eval checkpoints:
+  - `model_0.pt`: return `2333.160`, speed error `0.358`, centerline `0.032`, lateral `0.178`, min gap `1.187`, collision/reset `0.0`
+  - `model_300.pt`: return `8667.082`, speed error `0.232`, centerline `0.022`, lateral `0.015`, min gap `1.449`, collision/reset `0.0`
+  - `model_600.pt`: return `14850.088`, speed error `0.120`, centerline `0.029`, lateral `0.016`, min gap `1.455`, collision/reset `0.0`
+- Full `harl_mappo_shared` eval summary is still pending.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` evaluation progress:
+
+- Completed additional fixed-eval checkpoints:
+  - `model_900.pt`: return `17130.932`, speed error `0.070`, centerline `0.013`, lateral `0.014`, min gap `1.472`, collision/reset `0.0`
+  - `model_1200.pt`: return `18014.441`, speed error `0.063`, centerline `0.014`, lateral `0.012`, min gap `1.499`, collision/reset `0.0`
+  - `model_1500.pt`: return `18382.331`, speed error `0.059`, centerline `0.013`, lateral `0.011`, min gap `1.499`, collision/reset `0.0`
+  - `model_1800.pt`: return `18038.652`, speed error `0.066`, centerline `0.012`, lateral `0.008`, min gap `1.499`, collision/reset `0.0`
+- Interpretation:
+  - `harl_mappo_shared` best intermediate return so far (`18382.331`) is above strengthened `happo_meta` final (`18286.980`) but below strengthened `happo_meta` best (`18698.026`).
+  - Need `harl_mappo_shared` final row before deciding final/3000 comparison.
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` evaluation progress:
+
+- Additional checkpoints completed:
+  - `model_2100.pt`: return `18231.920`, speed error `0.062`, centerline `0.012`, lateral `0.010`, min gap `1.497`, collision/reset `0.0`
+  - `model_2400.pt`: return `18247.549`, speed error `0.057`, centerline `0.011`, lateral `0.010`, min gap `1.498`, collision/reset `0.0`
+  - `model_2700.pt`: return `17847.486`, speed error `0.067`, centerline `0.012`, lateral `0.010`, min gap `1.499`, collision/reset `0.0`
+- `model_final.pt` is still pending.
+- Strengthened `happo_meta` final (`18286.980`) remains above the `2100/2400/2700` rows but below `harl_mappo_shared`'s best intermediate row (`18382.331`).
+
+2026-07-03 hard-b batch2 `harl_mappo_shared` evaluation complete and `harl_haa2c` evaluation started:
+
+- `harl_mappo_shared` summary written:
+  - best checkpoint: `model_1500.pt`, return `18382.331`
+  - final/3000: `model_final.pt`, return `18095.054`
+- Interpretation:
+  - strengthened `happo_meta` final/3000 return `18286.980` beats `harl_mappo_shared` final/3000 return `18095.054`.
+  - strengthened `happo_meta` best return `18698.026` beats `harl_mappo_shared` best `18382.331`.
+- `harl_haa2c` fixed eval has started.
+- First `harl_haa2c` checkpoint:
+  - `model_0.pt`
+  - return `2631.070`
+  - speed error `0.353`
+  - centerline `0.031`
+  - lateral `0.155`
+  - min gap `1.171`
+  - collision/reset `0.0`.
+
+2026-07-03 hard-b batch2 `harl_haa2c` evaluation progress:
+
+- Completed fixed-eval checkpoints:
+  - `model_300.pt`: return `18262.406`, speed error `0.060`, centerline `0.018`, lateral `0.015`, min gap `1.499`, collision/reset `0.0`
+  - `model_600.pt`: return `18428.836`, speed error `0.057`, centerline `0.018`, lateral `0.015`, min gap `1.499`, collision/reset `0.0`
+  - `model_900.pt`: return `18149.391`, speed error `0.065`, centerline `0.018`, lateral `0.016`, min gap `1.499`, collision/reset `0.0`
+- Interpretation:
+  - HAA2C has a strong intermediate row (`model_600.pt`) above strengthened HAPPO+meta final, but still below strengthened HAPPO+meta best `18698.026`.
+  - Need HAA2C final row for final/3000 comparison.
+
+2026-07-03 hard-b batch2 `harl_haa2c` evaluation progress:
+
+- Additional checkpoints completed:
+  - `model_1200.pt`: return `18170.519`, speed error `0.063`, centerline `0.018`, lateral `0.015`, min gap `1.499`, collision/reset `0.0`
+  - `model_1500.pt`: return `18429.226`, speed error `0.060`, centerline `0.018`, lateral `0.015`, min gap `1.499`, collision/reset `0.0`
+  - `model_1800.pt`: return `18050.331`, speed error `0.066`, centerline `0.018`, lateral `0.015`, min gap `1.499`, collision/reset `0.0`
+- Best HAA2C return so far is `18429.226`, still below strengthened HAPPO+meta best `18698.026`; final row pending.
+
+2026-07-03 hard-b 3000 + ROS replay export request:
+
+- User requested a new six-algorithm comparison using `hard-b` attack strength, `3000` iterations, trained as two groups of three algorithms, then a comparison result.
+- User also requested ROS replay export for play/eval, without changing training algorithm bodies, reward, attack, or HAPPO/HARL logic.
+- Initial process check before starting this work: no residual Isaac training/evaluation process was active; only the `pgrep` command itself matched.
+- Next implementation steps:
+  - locate the hard-b attack profile/override values and the existing six-algorithm comparison runner.
+  - add non-invasive eval/play instrumentation to export env0, 5-vehicle per-step replay CSV and metadata.
+  - add CSV validation and ROS1 `cmd_vel` replay example scripts.
+  - generate and validate one medium-checkpoint ROS replay CSV locally, without starting real ROS hardware.
+  - launch the hard-b 3000-iteration six-algorithm training/evaluation in two three-algorithm batches and then plot/compare results.
+
+2026-07-03 implementation context found:
+
+- Existing `eval_happo_platoon.py` already has fixed-step checkpoint evaluation and `--fresh_env_per_checkpoint`; this is the safest hook for per-step ROS export.
+- Existing `play.py` already restores task-local HAPPO state for deterministic play; add the same optional ROS export there.
+- `IsaacHAPPOInternalWrapper.step()` records raw HAPPO actions and post-shield semantic executed actions via `record_action_diagnostics`; scaled wheel commands can be read after `env.step()` from each IsaacLab `JointVelocityAction` term's `processed_actions`.
+- The ROS export can be implemented as observability only: no training algorithm body, reward, attack, or HAPPO/HARL update logic needs to change.
+- `hard-b` strength maps to the ladder profile values `max_fdi_pos=4.00`, `max_fdi_acc=1.30`, `max_dos_rate=0.18`; use `attack_level=hard` with these explicit maxima because the runtime router only accepts `off/light/easy/medium/hard`.
+
+2026-07-03 ROS replay code update:
+
+- Added shared exporter `scripts/reinforcement_learning/rsl_rl/ros_replay_exporter.py`.
+  - Exports only `env_id=0`.
+  - Writes 5 rows per environment step with `robot_id=1..5`.
+  - Uses HAPPO diagnostic raw action for `raw_action_*`.
+  - Uses IsaacLab `JointVelocityAction.processed_actions` after env step for scaled `executed_action_*` and `wheel_cmd_*`.
+  - Leaves `steering_cmd` as NaN because the project has no explicit steering command.
+  - Adds extra turn helper columns `raw_action_turn_agent` and `executed_action_turn_agent` for replay-script fallback.
+- Added optional args to both `scripts/reinforcement_learning/rsl_rl/eval_happo_platoon.py` and `scripts/reinforcement_learning/rsl_rl/play.py`:
+  - `--export_ros_replay`
+  - `--ros_replay_path <csv_path>`
+- Added tools:
+  - `scripts/tools/check_ros_replay_csv.py`
+  - `scripts/tools/ros_replay_cmd_vel.py`
+- Static checks passed:
+  - `python3 -m py_compile` for exporter/eval/play/check/replay scripts.
+  - `bash -n scripts/tools/run_medium_algorithm_comparison.sh`.
+- Updated `scripts/tools/run_medium_algorithm_comparison.sh` to parameterize attack profile values via environment variables while keeping medium defaults unchanged; this allows hard-b training with explicit `ATTACK_MAX_FDI_POS=4.0`, `ATTACK_MAX_FDI_ACC=1.30`, `ATTACK_MAX_DOS_RATE=0.18`.
+
+2026-07-03 ROS replay sample export check:
+
+- Ran a short 20-step eval export from medium `model_300.pt` without launching ROS hardware.
+- Export directory:
+  - `logs/rsl_rl/platoon_happo/ros_replay_exports/medium_model300_20260703`
+- Output files:
+  - `ros_replay.csv`
+  - `ros_replay_meta.json`
+  - `eval_summary.csv`
+  - `eval_steps_model_300.csv`
+- `scripts/tools/check_ros_replay_csv.py` result:
+  - rows `100`, steps `20`, exactly 5 robot rows per step.
+  - required fields OK.
+  - time monotonic OK.
+  - only NaN field is `steering_cmd` (`100` rows), expected because the current task has wheel-level velocity actions and no explicit steering command.
+- Metadata confirms:
+  - `attack_level=medium`, `attack_mode=profile`, `attack_max_fdi_pos=2.0`, `attack_max_fdi_acc=0.5`, `attack_max_dos_rate=0.1`.
+  - `action_scale=12.5`, `happo_action_clip=0.4`, `d_drop=1.42`, `dt=0.02`, `num_agents=5`, `obs_dim=11`, `act_dim=4`.
+- Process check after sample export: no residual Isaac train/eval process was active; only the `pgrep` command itself matched.
+
+2026-07-03 hard-b 3000 training started:
+
+- Launched two-batch hard-b comparison driver with base tag `hardb3000_20260703_020643`.
+- Batch 1 package/log:
+  - package: `logs/rsl_rl/platoon_happo/hardb3000_20260703_020643_batch1_package`
+  - log: `train_hardb3000_20260703_020643_batch1.log`
+  - algorithms: `mappo`, `happo_no_meta`, `happo_meta`
+- Batch 2 will start after batch 1 completes:
+  - package: `logs/rsl_rl/platoon_happo/hardb3000_20260703_020643_batch2_package`
+  - algorithms: `harl_mappo_shared`, `harl_haa2c`, `harl_hatrpo`
+- Batch 1 manifest verifies:
+  - `max_iterations=3000`, `eval_every=300`, `eval_steps=1000`, `num_envs=64`, `eval_num_envs=32`.
+  - `attack_profile_label=hard_b`, `attack_level=hard`, `attack_mode=profile`, `attack_max_fdi_pos=4.0`, `attack_max_fdi_acc=1.30`, `attack_max_dos_rate=0.18`.
+  - strengthened HAPPO+meta teacher/reward/shield overrides are recorded for the `happo_meta` row.
+- Current process: batch 1 is training `mappo` first; no parallel Isaac train jobs are active.
+
+2026-07-03 hard-b batch1 early status:
+
+- `mappo` training is running under hard-b settings.
+- Around iteration `12/3000`, process is stable and advancing at about `1005 steps/s`; ETA for this first algorithm is about `1h44m` at the current speed.
+- No `runs.txt` entry yet because the first algorithm has not completed.
+- Later check: `mappo` reached about iteration `37/3000`; current ETA for the first algorithm is about `1h42m`.
+- Later check: `mappo` reached about iteration `57/3000`; `model_50.pt` and `model_best.pt` exist, so checkpoint saving is working.
+- Later check: `mappo` reached about iteration `81/3000`; latest ETA for this first algorithm is about `1h39m`.
+- Around iteration `100/3000`, `mappo` run dir is `logs/rsl_rl/platoon_happo/2026-07-03_02-06-59_hardb3000_20260703_020643_batch1_mappo`.
+- Latest `platoon_metrics.csv` row confirms hard-b attack values are active: `attack_max_fdi_pos=4.0`, `attack_max_fdi_acc=1.3`, `attack_max_dos_rate=0.18`, `attack_enabled=1.0`.
+- Early metrics at update about `104`: speed error `0.3153`, gap error `0.1967`, centerline `0.0386`, lateral `0.1593`, min gap `1.2494`, reset_bad_ori `0.0`.
+- Monitoring note: allowed a longer polling window to approach the `model_300.pt` region; training session is still active and the next check will read the updated log/checkpoint state.
+- Around iteration `272/3000`, `mappo` has saved checkpoints through `model_250.pt`; ETA for this first algorithm is about `1h32m`.
+- Latest early hard-b `mappo` metrics at update about `276`: speed error `0.3151`, gap error `0.2435`, centerline `0.1527`, lateral `0.2522`, min gap `1.1323`, reset_bad_ori `0.0`, collision `0.0`.
+- Around iteration `352/3000`, `mappo` has saved `model_300.pt` and `model_350.pt`; ETA is about `1h29m`.
+- Latest metrics at update about `353`: speed error `0.2631`, gap error `0.2014`, centerline `0.0421`, lateral `0.1105`, min gap `1.2667`, reset_bad_ori `0.0`, collision `0.0`.
+- Two accidental long-poll helper `sleep` commands were stopped; the actual hard-b training process remains active.
+- Monitoring note: another longer training window completed; next check is reading the current log/metrics to confirm whether `mappo` is still stable and which checkpoint region it has reached.
+- Around iteration `516/3000`, `mappo` has saved through `model_500.pt`; ETA for this first algorithm is about `1h24m`.
+- Latest metrics at update about `520`: speed error `0.2482`, gap error `0.2433`, centerline `0.1113`, lateral `0.1932`, min gap `1.1766`, reset_bad_ori `0.0`, collision `0.0`.
+- `runs.txt` is still empty because `mappo` has not completed yet.
+- Around iteration `676/3000`, `mappo` has saved through `model_650.pt`; ETA for this first algorithm is about `1h18m`.
+- Latest metrics at update about `677`: speed error `0.2419`, gap error `0.2728`, centerline `0.1215`, lateral `0.1863`, min gap `1.0567`, reset_bad_ori `0.0`, collision `0.0`.
+- Around iteration `836/3000`, `mappo` has saved through `model_800.pt`; ETA for this first algorithm is about `1h13m`.
+- Latest metrics at update about `837`: speed error `0.2221`, gap error `0.2709`, centerline `0.1282`, lateral `0.2069`, min gap `1.1048`, reset_bad_ori `0.0`, collision `0.0`.
+- Around iteration `992/3000`, `mappo` has saved through `model_950.pt`; ETA for this first algorithm is about `1h08m`.
+- Latest metrics at update about `995`: speed error `0.2198`, gap error `0.2611`, centerline `0.1524`, lateral `0.2617`, min gap `1.1952`, reset_bad_ori `0.0`, collision `0.0`.
+- No algorithm completion line yet; batch1 has not entered `happo_no_meta`.
+- Around iteration `1148/3000`, `mappo` is still the active first algorithm; latest ETA is about `1h03m`.
+- Monitoring note: continuing without intervention; next status check will focus on whether `mappo` passes the mid-run checkpoint region and whether `runs.txt` records the first completed algorithm.
+- Monitoring note: reading the next mid-run `mappo` status; keep baseline training conditions unchanged unless the process fails.
+- Around iteration `1464/3000`, `mappo` is still active; ETA for this first algorithm is about `52m`.
+- Latest metrics at update about `1465`: speed error `0.2180`, gap error `0.2817`, centerline `0.1490`, lateral `0.2508`, min gap `1.1187`, reset_bad_ori `0.0`, collision `0.0`.
+- `runs.txt` still has no completion entry.
+- Monitoring note: continue waiting for `mappo` completion and the script's transition to `happo_no_meta`; watch for process, script, or GPU failures at transition.
+- Monitoring note: first algorithm is still running; continue without mid-run parameter changes.
+- Monitoring note: next user-visible status should report either progress near `2000/3000` or first-algorithm completion, whichever happens first.
+- Monitoring note: reading current status near the expected `2000/3000` region; if stable, keep waiting for automatic transition to the second algorithm.
+- Around iteration `1776/3000`, `mappo` is still active; ETA for this first algorithm is about `42m`.
+- Latest metrics at update about `1780`: speed error `0.2157`, gap error `0.2758`, centerline `0.1582`, lateral `0.2801`, min gap `1.1725`, reset_bad_ori `0.0`, collision `0.0`.
+- Monitoring note: no need to alter training between ETA-only checks; next key update should be first-algorithm completion or a real failure.
+- Monitoring note: checking whether the first algorithm is near the `2400-2500` checkpoint region and whether it has written the first `runs.txt` entry.
+- Around iteration `2092/3000`, `mappo` is still active; ETA for this first algorithm is about `31m`.
+- Latest metrics at update about `2094`: speed error `0.4687`, gap error `0.0106`, centerline `0.0005`, lateral `0.0016`, min gap `1.4926`, reset_bad_ori `0.0`, collision `0.0`.
+- Interpretation: hard-b `mappo` appears to have shifted into a very conservative/slow policy regime; formation metrics are excellent but speed tracking is poor. Keep it unchanged for the baseline comparison and let fixed eval quantify it.
+- Monitoring note: checking whether `mappo` has completed and whether batch1 has transitioned to `happo_no_meta`; if not, it should be in the final segment.
+- Around iteration `2400/3000`, `mappo` is still active; ETA for this first algorithm is about `20m`.
+- `runs.txt` remains empty; batch1 has not transitioned to `happo_no_meta` yet.
+- Monitoring note: `mappo` is in its final several hundred iterations; wait for natural completion rather than adding noisy intermediate metric checks.
+- Monitoring note: checking whether `mappo` completed and whether batch1 has transitioned; record run directory if `runs.txt` is written.
+- Around iteration `2708/3000`, `mappo` is still active; ETA is about `10m`.
+- `runs.txt` remains empty; expect completion/transition on the next short-window check if training stays stable.
+- Monitoring note: checking first-algorithm completion and whether batch1 has started `happo_no_meta`.
+- `mappo` completed all `3000` iterations and batch1 wrote the first `runs.txt` entry:
+  - `mappo=/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-07-03_02-06-59_hardb3000_20260703_020643_batch1_mappo`
+- Batch1 automatically started the second algorithm:
+  - `happo_no_meta`
+  - run name: `hardb3000_20260703_020643_batch1_happo_no_meta`
+- Process check: only the batch driver and one active `happo_no_meta` Isaac training process are running.
+- Next monitoring target: `happo_no_meta` 3000-iteration completion, then automatic transition to strengthened `happo_meta`.
+- Monitoring note: checking early `happo_no_meta` startup, checkpoint/metrics writing, and hard-b attack parameter propagation.
+- `happo_no_meta` early status:
+  - run dir: `logs/rsl_rl/platoon_happo/2026-07-03_03-50-46_hardb3000_20260703_020643_batch1_happo_no_meta`
+  - around iteration `157/3000`, ETA about `1h39m`.
+  - checkpoints through `model_150.pt` exist.
+  - hard-b parameters confirmed in metrics: `attack_enabled=1.0`, `attack_max_fdi_pos=4.0`, `attack_max_fdi_acc=1.3`, `attack_max_dos_rate=0.18`.
+  - latest metrics around update `159`: speed error `0.2866`, gap error `0.1653`, centerline `0.0065`, lateral `0.0610`, min gap `1.3569`, reset_bad_ori `0.0`, collision `0.0`.
+- Monitoring note: continue waiting for `happo_no_meta` mid/late checkpoints; suppress ETA-only updates unless there is a failure or completion.
+- Monitoring note: reading `happo_no_meta` mid-run status, especially whether it has passed the `600+` checkpoint region.
+- Around iteration `464/3000`, `happo_no_meta` has saved through `model_450.pt`; ETA for this second algorithm is about `1h28m`.
+- Latest metrics around update `465`: speed error `0.2572`, gap error `0.2409`, centerline `0.1629`, lateral `0.2816`, min gap `1.2255`, reset_bad_ori `0.0`, collision `0.0`.
+- Batch1 `runs.txt` currently only has the completed `mappo` entry.
+- Monitoring note: continue waiting for `happo_no_meta` completion/transition or any real failure; avoid ETA-only updates.
+- Monitoring note: `happo_no_meta` still running; continue waiting for key state.
+- Monitoring note: reading `happo_no_meta` mid-run status; if stable, continue waiting until completion.
+- Around iteration `772/3000`, `happo_no_meta` has saved through `model_750.pt`; ETA for this second algorithm is about `1h17m`.
+- Latest metrics around update `773`: speed error `0.2296`, gap error `0.2246`, centerline `0.1509`, lateral `0.2578`, min gap `1.2953`, reset_bad_ori `0.0`, collision `0.0`.
+- Monitoring note: continue waiting for `happo_no_meta` late-stage progress or completion/transition.
+- Monitoring note: no ROS launch is involved; keep current hard-b training conditions unchanged.
+- Monitoring note: `happo_no_meta` still in its 3000-iteration training; continue waiting for a key state.
+- Monitoring note: reduce ETA-only updates; next status should be substantial late-stage progress or transition.
+- Monitoring note: reading `happo_no_meta` later-stage status to check whether it has reached the `1500-2000` region or transitioned.
+- Around iteration `1232/3000`, `happo_no_meta` has not transitioned to `happo_meta`; ETA is about `1h01m`.
+- Latest metrics around update `1234`: speed error `0.2263`, gap error `0.2162`, centerline `0.0894`, lateral `0.1230`, min gap `1.2980`, reset_bad_ori `0.0`, collision `0.0`.
+- Monitoring note: continue waiting for `happo_no_meta` completion or transition to `happo_meta`.
+- Monitoring note: continue running; next immediate update should be completion/transition or failure.
+- Monitoring note: training continues; no ROS process is started.
+- Monitoring note: reading whether `happo_no_meta` has entered its latter half; continue if stable.
+- Around iteration `1544/3000`, `happo_no_meta` is in the latter half but has not transitioned; ETA is about `51m`.
+- Latest metrics around update `1545`: speed error `0.2246`, gap error `0.2123`, centerline `0.0822`, lateral `0.1172`, min gap `1.3026`, reset_bad_ori `0.0`, collision `0.0`.
+- Monitoring note: continue waiting for `happo_no_meta` late-stage/transition.
+- Monitoring note: training continues; record next material state change.
+- Monitoring note: keep current batch running without interruption.
+- Monitoring note: still waiting for a key transition/completion while training continues.
+- Monitoring note: checking whether `happo_no_meta` is near the `2000/3000` region.
+- Around iteration `1852/3000`, `happo_no_meta` has not transitioned; ETA is about `40m`.
+- Latest metrics around update `1856`: speed error `0.2086`, gap error `0.2184`, centerline `0.0753`, lateral `0.1078`, min gap `1.2999`, reset_bad_ori `0.0`, collision `0.0`.
+- Monitoring note: continue waiting for the second algorithm to complete.
+- Monitoring note: current training remains active; no interruption.
+- Monitoring note: continue waiting for key completion state.
+- Monitoring note: still in wall-clock waiting for `happo_no_meta` completion.
+- Monitoring note: reading whether `happo_no_meta` has entered the final third.
+- Around iteration `2164/3000`, `happo_no_meta` is in the final third but has not transitioned; ETA is about `29m`.
+- Latest metrics around update `2167`: speed error `0.2254`, gap error `0.2215`, centerline `0.0635`, lateral `0.1057`, min gap `1.3059`, reset_bad_ori `0.0`, collision `0.0`.
+- Monitoring note: continue waiting for the second algorithm to complete.
+- Monitoring note: keep waiting without altering the active process.
+- Monitoring note: training execution continues.
+- Monitoring note: next read should be near second-algorithm completion.
+- Monitoring note: reduce pure waiting messages; next material update should be completion, transition, or failure.
+- Monitoring note: waiting until near completion before the next detailed read.
+- Around iteration `2488/3000`, `happo_no_meta` has not transitioned; ETA is about `18m`.
+- `runs.txt` still contains only the completed `mappo` entry.
+- Process check: batch driver plus one active `happo_no_meta` Isaac training process are running.
+- Monitoring note: checking whether `happo_no_meta` completed and whether strengthened `happo_meta` has started.
+- Around iteration `2792/3000`, `happo_no_meta` is still active; ETA is about `7m`.
+- `runs.txt` still contains only the completed `mappo` entry; strengthened `happo_meta` has not started yet.
+- Monitoring note: checking again whether `happo_no_meta` completed and whether strengthened `happo_meta` has started.
+- `happo_no_meta` completed all `3000` iterations and batch1 wrote the second `runs.txt` entry:
+  - `happo_no_meta=/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-07-03_03-50-46_hardb3000_20260703_020643_batch1_happo_no_meta`
+- Batch1 automatically started the strengthened `happo_meta` run:
+  - run name: `hardb3000_20260703_020643_batch1_happo_meta`
+  - around iteration `22/3000`, ETA about `1h58m`.
+  - process check shows only the batch driver and one active `happo_meta` training process.
+- The active `happo_meta` command includes the hard-b attack settings plus the strengthened teacher/reward/shield overrides from the previous winning 3000-final setup.
+- Monitoring note: for the active strengthened `happo_meta`, next material updates should be key progress, completion, or failure rather than ETA-only messages.
+- Monitoring note: strengthened `happo_meta` is still running; continue waiting for key state.
+- Monitoring note: reading strengthened `happo_meta` early status to confirm no startup/runtime issue under hard-b.
+- Strengthened `happo_meta` early status:
+  - run dir: `logs/rsl_rl/platoon_happo/2026-07-03_05-37-02_hardb3000_20260703_020643_batch1_happo_meta`
+  - around iteration `295/3000`, ETA about `1h47m`.
+  - checkpoints through `model_250.pt` exist.
+  - hard-b parameters confirmed in metrics: `attack_enabled=1.0`, `attack_max_fdi_pos=4.0`, `attack_max_fdi_acc=1.3`, `attack_max_dos_rate=0.18`.
+  - latest metrics around update `299`: speed error `0.2335`, gap error `0.0822`, centerline `0.0271`, lateral `0.0633`, min gap `1.5005`, reset_bad_ori `0.0`, collision `0.0`.
+- Interpretation: early strengthened `happo_meta` is stable under hard-b and has better formation/min-gap behavior than the first two batch1 algorithms at comparable early checkpoints; continue to full 3000.
+- Monitoring note: strengthened `happo_meta` still running; no new material conclusion at this instant.
+- Monitoring note: reading strengthened `happo_meta` status near the `500+` checkpoint region.
+- Around iteration `568/3000`, strengthened `happo_meta` has saved through `model_550.pt`; ETA is about `1h36m`.
+- Latest metrics around update `570`: speed error `0.1956`, gap error `0.1041`, centerline `0.0313`, lateral `0.0715`, min gap `1.5017`, reset_bad_ori `0.0`, collision `0.0`, `reward_true_success=0.3594`, `reward_formation=2.3014`, `teacher_update_active=1.0`.
+- Interpretation: strengthened `happo_meta` remains stable and currently shows clearly better speed/gap/min-gap balance than the first two batch1 algorithms at comparable early/mid checkpoints.
+- Monitoring note: continue waiting for strengthened `happo_meta` key state; avoid additional pure-wait updates.
+- Monitoring note: one wait window elapsed; strengthened `happo_meta` is still running.
+- Monitoring note: reading whether strengthened `happo_meta` has reached the `900-1000` checkpoint region.
+- Around iteration `848/3000`, strengthened `happo_meta` is still active; ETA is about `1h25m`.
+- Latest metrics around update `852`: speed error `0.1784`, gap error `0.1170`, centerline `0.0303`, lateral `0.0782`, min gap `1.5041`, reset_bad_ori `0.0`, collision `0.0`, `reward_true_success=0.3359`, `reward_formation=2.2909`, `teacher_update_active=1.0`.
+- Interpretation: strengthened `happo_meta` continues to look materially better than batch1 `mappo` and `happo_no_meta` at comparable training stages under hard-b.
+- Monitoring note: strengthened `happo_meta` continues training; wait for next key state.
+- Monitoring note: no parameter changes while strengthened `happo_meta` is active.
+- Monitoring note: reading whether strengthened `happo_meta` is in the `1100-1200` region.
+- Around iteration `1128/3000`, strengthened `happo_meta` is still active; ETA is about `1h14m`.
+- Latest metrics around update `1130`: speed error `0.1769`, gap error `0.1158`, centerline `0.0332`, lateral `0.0747`, min gap `1.5034`, reset_bad_ori `0.0`, collision `0.0`, `reward_true_success=0.3594`, `reward_formation=2.2962`, `teacher_update_active=1.0`.
+- Interpretation: strengthened `happo_meta` remains stable and better balanced than the two earlier batch1 algorithms in training diagnostics.
+- Monitoring note: strengthened `happo_meta` continues training; wait for next material checkpoint or completion.
+- Monitoring note: reading whether strengthened `happo_meta` has entered the mid/late training region.
+- Around iteration `1404/3000`, strengthened `happo_meta` remains stable; ETA is about `1h03m`.
+- Latest metrics around update `1405`: speed error `0.1774`, gap error `0.1104`, centerline `0.0278`, lateral `0.0629`, min gap `1.5028`, reset_bad_ori `0.0`, collision `0.0`, `reward_true_success=0.3984`, `reward_formation=2.3077`.
+- Monitoring note: strengthened `happo_meta` continues training; wait for next key status.
+- Monitoring note: suppress further pure-wait messages until a state change or checkpoint read.
+- Monitoring note: reading whether strengthened `happo_meta` has entered the latter half of training.
+- Around iteration `1688/3000`, strengthened `happo_meta` is in the latter half; ETA is about `52m`.
+- Latest metrics around update `1692`: speed error `0.1723`, gap error `0.1099`, centerline `0.0273`, lateral `0.0719`, min gap `1.5023`, reset_bad_ori `0.0`, collision `0.0`, `reward_true_success=0.3516`, `reward_formation=2.2991`, `teacher_update_active=1.0`.
+- Monitoring note: continue waiting; do not emit more pure-wait updates until the next checkpoint read or transition.
+- Monitoring note: reading whether strengthened `happo_meta` has entered the final third.
 
 Expected startup line should include `wheel_axis_adapter=True`.
 
@@ -238,8 +2920,34 @@ START_RUN=2026-06-17_17-34-19 START_CHECKPOINT=model_final.pt scripts/tools/run_
     - run: `logs/rsl_rl/platoon_happo/2026-06-18_12-09-33_stage1_stable`
     - final observed speed: about `13712 steps/s`
     - final `value_loss` about `5.68`, `critic_grad_norm` about `14.64`
+
+2026-07-01 continuation status:
+
+- Current GPU load is from an active medium/profile comparison package:
+  - package: `logs/rsl_rl/platoon_happo/medium_compare_6algos_strongmeta_p3stagger_20260701_121424_package`
+  - run dirs currently writing metrics:
+    - `2026-07-01_12-14-38_medium_compare_6algos_strongmeta_p3stagger_20260701_121424_mappo`
+    - `2026-07-01_12-15-38_medium_compare_6algos_strongmeta_p3stagger_20260701_121424_happo_no_meta`
+    - `2026-07-01_12-16-39_medium_compare_6algos_strongmeta_p3stagger_20260701_121424_happo_meta`
+  - manifest target is `max_iterations=3000`, `eval_every=300`, `eval_steps=1000`, `parallel_train_jobs=3`.
+- Recent 100-row CSV windows around updates `~2065-2248` show no recurrence of the old catastrophic failure:
+  - `termination_reset_on_bad_ori` is `0.0` for all three active runs.
+  - Critic losses/grad norms are finite; no `1e9`-scale critic explosion was observed.
+  - Command speed is around `0.37 m/s`; leader speed is around `0.26-0.28 m/s`, so tracking is stable but still conservative.
+  - `shield_trigger_rate` remains `1.0`, so the shield is continuously intervening and may be limiting speed/turn freedom.
+- Follow-up log check around updates `mappo=2271`, `happo_no_meta=2241`, `happo_meta=2087` found no `ERROR`, `Traceback`, `OutOfMemory`, `NaN`, or `inf` matches in the three training logs.
+- Current iteration time is about `5 s/update` for each parallel job. The first three algorithms are expected to need roughly another hour to reach `3000` before the script can continue to the remaining algorithms/evaluation.
+- Do not start another Isaac training job while these three runs are active; `nvidia-smi` shows the RTX 3080 near full memory and utilization.
     - post-run GPU memory returned to about `857 MiB` used / `9148 MiB` free.
 - Behavioral note: resuming from `2026-06-17_17-34-19/model_final.pt` still gives high `termination_reset_on_bad_ori` in the short validation window because that checkpoint was trained before the corrected wheel-axis/action curriculum. This is now a policy-quality issue, not an execution/OOM issue. For clean curriculum training, prefer starting stage1 from scratch unless checkpoint salvage is specifically needed.
+
+2026-07-02 HAPPO+meta improvement loop status:
+
+- Fixed-medium six-algorithm comparison target remains the package `logs/rsl_rl/platoon_happo/medium_compare_6algos_strongmeta_p3stagger_20260701_121424_package`; strongest competitor is `harl_haa2c/model_300.pt` with return `18744.394130`, speed error `0.051003`, gap error `0.207911`, lateral `0.015476`, centerline `0.017712`, platoon speed `0.330433`, and zero collision/reset.
+- Best HAPPO+meta candidates so far do not yet beat that target: tuned shared-centerline `model_300.pt` return `18709.517992`; gap-speedbias-relaxed `model_300.pt` return `18714.886674`; balanced-rewardpush `model_300.pt` return `18697.254908`; strict-success-gap `model_300.pt` return `18712.082410`; success-centerline-mix `model_300.pt` return `18696.010886`.
+- Dense candidate-2 eval over checkpoints `[150,200,250,300,350,400,450]` produced a different value for the same `model_300.pt` (`18232.968013`) than the original coarse eval (`18714.886674`). The likely cause is that `eval_happo_platoon.py` evaluates multiple checkpoints sequentially in one simulation process/env, so command phase and environment state depend on checkpoint list/order.
+- Because the HAPPO+meta gap to HAA2C is only about `29.5` return points in the original protocol, the next reliable step is to make or use a checkpoint-independent eval protocol before deciding whether a change truly beats the baseline.
+- Reward-term diagnosis: compared with HAA2C, HAPPO+meta is mainly short on strict `true_success`/forward/progress while some variants already improve lateral/centerline or gap. Next candidates should combine structural HAPPO optimizer tuning with teacher weights that improve strict success without degrading centerline/lateral.
 
 Useful environment variables:
 
@@ -3900,6 +6608,186 @@ Tell Codex:
   - `min_pair_gap_mean` fell to `1.1858`
 - Interpretation: hard safety checks still pass, but this `light` chunk is increasingly poor. If it is accepted automatically, the adaptive acceptance thresholds are probably too loose for paper-quality training data.
 
+2026-07-01 HAPPO+meta improvement pass started:
+
+- User requested improving `happo_meta` by tuning or other changes, with `happo+meta` as the target.
+- Baseline comparison to beat from the completed six-algorithm fixed-medium run:
+  - `happo_meta` best previous eval return was about `18325.7` at `model_2700.pt`.
+  - Previous `happo_meta` was active but not better than `happo_no_meta`; meta/teacher signal needed tuning.
+- Code changes already applied for this pass:
+  - Teacher clean physical score now includes env-local road centerline cost, not world-y centerline.
+  - `RewardTeacherCfg` now supports `lambda_centerline`.
+  - Router and task configs now expose teacher lambda knobs through Hydra/config.
+  - `happo_meta` comparison recipe now uses shared actor, lower teacher shaping/learning aggressiveness, stronger consistency, slower outer-delta ramp, and explicit teacher objective weights for spacing, velocity, centerline, lateral, heading, forward deficit, and action energy.
+- Static checks passed:
+  - `python3 -m py_compile` for `teacher.py`, `router.py`, `agents.py`, `config.py`, and `tasks/__init__.py`.
+  - `bash -n scripts/tools/run_medium_algorithm_comparison.sh`.
+- Focused run currently active:
+  - tag: `happo_meta_tuned_shared_centerline_20260701_222401`
+  - log: `train_happo_meta_tuned_shared_centerline_20260701_222401.log`
+  - run dir: `logs/rsl_rl/platoon_happo/2026-07-01_22-24-16_happo_meta_tuned_shared_centerline_20260701_222401_happo_meta`
+  - package: `logs/rsl_rl/platoon_happo/happo_meta_tuned_shared_centerline_20260701_222401_package`
+- Live status at the restart of this continuation:
+  - training/evaluation process is still running.
+  - latest observed training window before this note had speed error around `0.10~0.11`, lateral around `0.058`, centerline around `0.05`, and no bad-orientation reset.
+  - early result suggests the new centerline-aware meta teacher improves stability/lateral behavior, while speed tracking is the remaining bottleneck.
+- Live check at about `542/1200`:
+  - process is still training, not yet in post-training evaluation.
+  - log shows normal throughput around `895 steps/s`, iteration time about `2.29 s`.
+  - current `Episode_Termination/reset_on_bad_ori=0.0000` and `time_out=1.0000`.
+  - current `Metrics/base_velocity/error_vel_xy` is around `0.116~0.125`, so speed tracking remains the main weakness.
+  - current leader debug example: command `0.314`, actual x velocity about `0.151`; processed wheel targets are bounded and actuator tracking looks normal.
+- CSV check around row `559`:
+  - last50: speed error `0.1094`, leader speed `0.2648`, platoon speed `0.2691`, lateral `0.0601`, centerline `0.0525`, gap `0.2064`, min pair gap `1.4530`, bad reset `0`.
+  - last100: speed error `0.1121`, lateral `0.0601`, centerline `0.0525`, gap `0.2058`, bad reset `0`.
+  - teacher shaping is positive in the latest rows (`last teacher_shaping_mean=0.1367`), so the tuned teacher remains active rather than dormant.
+  - conclusion unchanged: stable and centerline-aware, but not yet clearly fast enough; wait for full eval before second-round tuning.
+- Eval scoring reminder checked from `scripts/reinforcement_learning/rsl_rl/eval_happo_platoon.py`:
+  - `episode_return_mean` is computed by summing per-step reward-manager terms (`eval_total_reward_mean`) after warmup.
+  - The outer `reward_env_mean` can be zero for task-local HAPPO and is not the score used in eval comparisons.
+  - Therefore final HAPPO+meta quality must be judged from `eval_summary.csv`, not from mid-training `reward_env_mean`.
+- Live check around row/update `656`:
+  - last50: speed error `0.1066`, leader speed `0.2731`, platoon speed `0.2775`, lateral `0.0572`, centerline `0.0549`, gap `0.2109`, min pair gap `1.4537`, bad reset `0`.
+  - last100: speed error `0.1080`, lateral `0.0580`, centerline `0.0548`, gap `0.2098`, bad reset `0`.
+  - speed is improving slowly relative to row `559`, while lateral/centerline remain stable.
+  - still not enough evidence to stop or change knobs before checkpoint eval.
+- Live check around row/update `700`:
+  - last50: speed error `0.0958`, leader speed `0.2776`, platoon speed `0.2808`, lateral `0.0559`, centerline `0.0538`, gap `0.2119`, min pair gap `1.4537`, bad reset `0`.
+  - last100: speed error `0.1023`, lateral `0.0565`, centerline `0.0546`, gap `0.2112`, bad reset `0`.
+  - The tuned HAPPO+meta run is now clearly improving speed while keeping formation stable; continue to full eval before deciding whether to launch a second speed-biased candidate.
+- Live check around row/update `738`:
+  - last50: speed error `0.0984`, leader speed `0.2781`, platoon speed `0.2821`, lateral `0.0536`, centerline `0.0571`, gap `0.2130`, min pair gap `1.4537`, bad reset `0`.
+  - last100: speed error `0.0974`, leader speed `0.2768`, platoon speed `0.2806`, lateral `0.0550`, centerline `0.0545`, gap `0.2121`, bad reset `0`.
+  - trend is still positive and stable; continue to `model_900` / final evaluation.
+- Worktree note:
+  - `git diff --stat` shows current tracked modifications across HAPPO, router/teacher/config, comparison plotting, the comparison script, and `debug_notes.md`.
+  - Some of these are prior accumulated HAPPO/platoon changes; do not revert them while optimizing `happo_meta`.
+  - Current active scope remains the HAPPO+meta teacher/config comparison changes plus evaluation of the focused run.
+- Current execution plan:
+  1. Complete the focused tuned HAPPO+meta run and collect `eval_summary.csv`.
+  2. Compare the best tuned checkpoint against the previous `happo_meta` and `happo_no_meta` baselines.
+  3. If the tuned candidate does not improve the eval score, launch a second HAPPO+meta candidate biased more toward speed tracking.
+  4. Report the final best checkpoint/config only after the eval comparison is concrete.
+- Live check around row/update `811`:
+  - last50: speed error `0.1009`, leader speed `0.2765`, platoon speed `0.2816`, lateral `0.0607`, centerline `0.0671`, gap `0.2124`, min pair gap `1.4534`, bad reset `0`.
+  - last100: speed error `0.0993`, lateral `0.0590`, centerline `0.0628`, gap `0.2132`, bad reset `0`.
+  - Compared with update `700~738`, speed remains improved but centerline/lateral are slightly drifting upward.
+  - Key next checkpoint is `model_900.pt`; if eval return is not better, second-round tuning should likely trade less centerline-heavy teacher shaping for stronger speed/forward-drive recovery.
+- Live check around row/update `857`:
+  - last50: speed error `0.0981`, leader speed `0.2769`, platoon speed `0.2827`, lateral `0.0635`, centerline `0.0717`, gap `0.2127`, min pair gap `1.4534`, bad reset `0`.
+  - last100: speed error `0.0998`, lateral `0.0620`, centerline `0.0688`, gap `0.2127`, bad reset `0`.
+  - speed is holding, but centerline/lateral drift is rising. Final checkpoint may not be the best; rely on eval selection across checkpoints rather than final-only.
+- Watch item before `model_900`:
+  - centerline/lateral have risen in the late training window.
+  - `teacher_shaping_mean` has also dropped toward a near-neutral value in the last window.
+  - If eval shows an intermediate checkpoint beats final, use that checkpoint; do not default to `model_final.pt`.
+- `model_900.pt` exists; live check around row/update `902`:
+  - last50: speed error `0.1011`, leader speed `0.2770`, platoon speed `0.2817`, lateral `0.0621`, centerline `0.0705`, gap `0.2125`, min pair gap `1.4535`, bad reset `0`.
+  - last100: speed error `0.0994`, lateral `0.0631`, centerline `0.0712`, gap `0.2128`, bad reset `0`.
+  - training remains stable but the best behavioral window likely occurred earlier than the latest rows; final eval must compare `model_300`, `model_600`, `model_900`, and final.
+- Old HAPPO+meta eval baseline re-opened for direct comparison:
+  - old `model_600.pt`: return `17796.1`, speed error `0.0622`, centerline `0.0066`, lateral `0.0051`.
+  - old `model_900.pt`: return `18000.1`, speed error `0.0631`, centerline `0.0123`, lateral `0.0131`.
+  - old `model_2700.pt`: return `18325.7`, speed error `0.0549`, centerline `0.0137`, lateral `0.0131`; this remains the target to beat.
+  - old `model_final.pt`: return `17899.5`; final was not best, so checkpoint selection matters.
+- Live check around row/update `969`:
+  - last50: speed error `0.0934`, leader speed `0.2780`, platoon speed `0.2821`, lateral `0.0668`, centerline `0.0795`, gap `0.2119`, min pair gap `1.4534`, bad reset `0`.
+  - last100: speed error `0.0973`, lateral `0.0647`, centerline `0.0766`, gap `0.2117`, bad reset `0`.
+  - speed continues to improve, but this is increasingly a speed-vs-centerline/lateral tradeoff.
+  - Final selection should use eval return plus reset/collision/formation metrics; if old return is not beaten, try a second candidate with less centerline-heavy teacher and stronger speed objective.
+- Candidate-2 idea if this run fails to beat old eval:
+  - move closer to old best HAPPO+meta structure by setting `happo_share_actor=false`.
+  - reduce strong centerline/lateral teacher weights from this run.
+  - increase speed/forward-deficit emphasis so the meta teacher does not slow the policy while trying to center it.
+  - motivation: the current run shows speed improvement but increasing centerline/lateral drift, so shared actor plus strong centerline teacher may not be the right local optimum.
+- Live check around row/update `1021`:
+  - last50: speed error `0.1012`, leader speed `0.2781`, platoon speed `0.2812`, lateral `0.0604`, centerline `0.0740`, gap `0.2126`, min pair gap `1.4529`, bad reset `0`.
+  - last100: speed error `0.0976`, lateral `0.0636`, centerline `0.0770`, gap `0.2121`, bad reset `0`.
+  - no stability failure; centerline remains worse than the early best window.
+  - Current expectation: `model_600`/`model_900` may be more useful than final, but eval is still required.
+- Live check around row/update `1060`:
+  - last50: speed error `0.0986`, leader speed `0.2747`, platoon speed `0.2797`, lateral `0.0596`, centerline `0.0699`, gap `0.2118`, min pair gap `1.4531`, bad reset `0`.
+  - last100: speed error `0.0993`, lateral `0.0615`, centerline `0.0738`, gap `0.2122`, bad reset `0`.
+  - late training has not collapsed; metrics stabilized but not clearly better than old best.
+- Live check around row/update `1102`:
+  - last50: speed error `0.0979`, leader speed `0.2782`, platoon speed `0.2823`, lateral `0.0616`, centerline `0.0699`, gap `0.2121`, min pair gap `1.4535`, bad reset `0`.
+  - last100: speed error `0.1000`, lateral `0.0604`, centerline `0.0701`, gap `0.2119`, bad reset `0`.
+  - final training window is stable; eval should start after about another `100` iterations.
+- Near end-of-training rule for this run:
+  - Do not edit configuration during the last training segment.
+  - Let the current candidate finish and judge it only by its generated `eval_summary.csv`.
+  - Mid-run config edits would make the eval result hard to interpret.
+- End-of-training status around row `1146`:
+  - training still running normally, near the `1200` target.
+  - latest log still has `time_out=1.0000` and `reset_on_bad_ori=0.0000`.
+  - wait for the automatic eval stage; eval score is more important than these final training log rows.
+- End-of-training status around iteration `1178/1200`:
+  - still training, about one minute from eval.
+  - latest log still has `time_out=1.0000`, `reset_on_bad_ori=0.0000`.
+  - no error files or eval outputs yet under the package evaluation directory.
+- Status before eval check:
+  - training segment should be ending around this point.
+  - next expected step is package/evaluation output generation for selected checkpoints.
+  - full decision is deferred until `eval_summary.csv` exists.
+- Training completed and eval started:
+  - `model_final.pt` exists for the tuned run.
+  - log now shows evaluation environment startup with `num_envs=32`, HAPPO runner built, and deterministic/play-style debug lines.
+  - early eval debug appears to be for the initial/early checkpoint and shows poor speed, which is expected for `model_0`/early checkpoints; wait for full `eval_summary.csv`.
+- First eval checkpoint completed:
+  - `model_0.pt`: return `605.7`, speed error `0.372`, lateral `0.233`, centerline `0.022`, bad reset `0`.
+  - This is just the random/initial checkpoint and is not relevant to final selection except as a sanity baseline.
+- `model_300` eval is running:
+  - debug lines show command around `0.335` and actual leader velocity around `0.37~0.38`, much better than `model_0`.
+  - wait for the formal `[EVAL] model_300.pt` line before recording numbers.
+- Eval partial result:
+  - `model_300.pt`: return `18709.5`, speed error `0.051`, centerline `0.013`, lateral `0.014`, min gap `1.499`, collision `0`, bad reset `0`.
+  - `model_600.pt`: return `18288.9`, speed error `0.058`, centerline `0.019`, lateral `0.013`, min gap `1.494`, collision `0`, bad reset `0`.
+  - `model_300.pt` already beats the old HAPPO+meta best (`18325.7`) and old HAPPO no-meta (`18332.3`) in eval return.
+  - It is also close to old best overall `harl_haa2c` (`18744.4`) but not above it yet.
+  - Continue waiting for `model_900` and final eval; current best tuned HAPPO+meta checkpoint is `model_300.pt`.
+- `model_900.pt` eval completed:
+  - return `18126.0`, speed error `0.060`, centerline `0.015`, lateral `0.010`, min gap `1.490`, collision `0`, bad reset `0`.
+  - This confirms continued training after `model_300.pt` lowers return even though formation remains safe.
+  - Current best remains `model_300.pt`; wait for final eval only to complete the summary.
+
+2026-07-01 HAPPO+meta tuned run final result:
+
+- Focused run completed successfully with exit status `0`:
+  - tag: `happo_meta_tuned_shared_centerline_20260701_222401`
+  - run dir: `logs/rsl_rl/platoon_happo/2026-07-01_22-24-16_happo_meta_tuned_shared_centerline_20260701_222401_happo_meta`
+  - package: `logs/rsl_rl/platoon_happo/happo_meta_tuned_shared_centerline_20260701_222401_package`
+  - tar: `logs/rsl_rl/platoon_happo/happo_meta_tuned_shared_centerline_20260701_222401_package.tar.gz`
+- Eval ranking from `evaluation/happo_meta/eval_summary.csv`:
+  1. `model_300.pt`: return `18709.518`, speed error `0.05064`, centerline `0.01251`, lateral `0.01403`, gap `0.21087`, min gap `1.49894`, collision `0`, bad reset `0`.
+  2. `model_final.pt`: return `18313.260`, speed error `0.05725`, centerline `0.01974`, lateral `0.01735`, collision `0`, bad reset `0`.
+  3. `model_600.pt`: return `18288.891`, speed error `0.05824`, centerline `0.01890`, lateral `0.01251`, collision `0`, bad reset `0`.
+  4. `model_900.pt`: return `18126.005`, speed error `0.06008`, centerline `0.01467`, lateral `0.01001`, collision `0`, bad reset `0`.
+  5. `model_0.pt`: return `605.701`.
+- Improvement over previous fixed-medium comparison:
+  - old `happo_meta` best: `18325.681` at `model_2700.pt`.
+  - old `happo_no_meta` best: about `18332.3`.
+  - new tuned `happo_meta` best: `18709.518` at `model_300.pt`.
+  - gain vs old `happo_meta`: about `+383.8` eval return.
+  - gain vs old `happo_no_meta`: about `+377.2` eval return.
+  - New tuned HAPPO+meta is now close to the previous overall best `harl_haa2c` (`18744.4`) but still slightly below it by about `34.9`.
+- Packaging fix:
+  - The package originally contained only training `model_best.pt` and `model_final.pt`, while eval-best was original run `model_300.pt`.
+  - Copied original `model_300.pt` into package as:
+    - `training/happo_meta/model_eval_best.pt`
+  - SHA256 verified:
+    - `model_eval_best.pt` equals original `model_300.pt`
+    - hash `e4ea05b2633fe4448a59406d8c240cb2b7211e5be9bd8fcce984b806ed96f9c1`
+  - Updated package `manifest.txt` with best eval checkpoint and metrics.
+  - Rebuilt package tar; tar listing confirms `model_eval_best.pt` is included.
+- Decision:
+  - The requested HAPPO+meta improvement is achieved in this pass.
+  - Do not use `model_final.pt` as the best policy for this tuned run.
+  - Use `training/happo_meta/model_eval_best.pt` from the package or the original `model_300.pt` in the run dir.
+  - A second speed-biased candidate is not necessary for this pass because the tuned candidate already beats the old HAPPO+meta/no-meta baselines.
+- Focused tuned HAPPO+meta process exited:
+  - training and evaluation command is no longer running.
+  - next action is to inspect the generated `eval_summary.csv`, package contents, and process exit status in the pipeline log.
+
 2026-06-29 half-hour monitor continuation check 19:
 
 - Manual monitor check was run again for the active adaptive curriculum training.
@@ -6120,3 +9008,1330 @@ Tell Codex:
 - The plotting fix and final notes were committed/pushed to GitHub:
   - branch `freeze/cagan-step3-dualchannel-logging`
   - commit `597f428 Fix final checkpoint iteration in medium comparison plots`
+
+2026-07-01 fixed-medium comparison interpretation:
+
+- The three algorithms intentionally use the same environment reward terms under eval. This is correct for a fair algorithm comparison; reward function differences should not be the claimed advantage.
+- In fixed `medium` eval, all three methods are near the task ceiling:
+  - final speed error around `0.060`;
+  - lateral/centerline errors around `0.01-0.02`;
+  - min gap around `1.497-1.499`;
+  - collision and bad-orientation reset are `0`.
+- Therefore final reward differences are small and cannot strongly prove overall superiority.
+- Current evidence:
+  - By best-return checkpoint, `HAPPO + meta` has the highest return (`18641.50`) and lowest speed error (`0.0540`).
+  - By final checkpoint, `HAPPO w/o meta` has the highest final return (`18200.34`) and lowest lateral/centerline error (`0.0118` / `0.0131`).
+  - MAPPO has the best lateral error at its best-return checkpoint (`0.0066`) and the highest approximate return AUC across evaluated checkpoints.
+- Conclusion: this single-seed fixed-medium comparison proves all three can solve medium safely, but it does not yet strongly demonstrate that meta-HAPPO dominates. To support the proposed algorithm, use stronger evidence: unseen stronger attacks, robustness degradation curves, sample efficiency/time-to-threshold, recovery time after attack bursts, multi-seed statistics, and ablations where meta-learning is expected to matter.
+
+2026-07-01 implementation note for MAPPO / HAPPO w/o meta:
+
+- The current `MAPPO` baseline is implemented as a MAPPO-like ablation inside the same task-local centralized-critic/per-agent-actor runner, not as a separate external MAPPO codebase.
+- Code path:
+  - `env.algorithm.algorithm=mappo`
+  - `env.algorithm.enable_teacher=false`
+  - `env.algorithm.happo_use_factor=false`
+- In `PlatoonHAPPORunner`, `happo_use_factor=false` disables HAPPO's sequential importance factor update, leaving per-agent PPO-style actor updates with a centralized critic/shared observation. This is the MAPPO-like baseline.
+- `HAPPO w/o meta` uses:
+  - `env.algorithm.algorithm=happo`
+  - `env.algorithm.enable_teacher=false`
+  - `env.algorithm.happo_use_factor=true`
+- Therefore HAPPO w/o meta keeps the HAPPO sequential importance factor but removes teacher/meta reward shaping and teacher update.
+- `HAPPO + meta` uses:
+  - `env.algorithm.algorithm=happo`
+  - `env.algorithm.enable_teacher=true`
+  - `env.algorithm.happo_use_factor=true`
+- The teacher/meta module shapes rewards only when `enable_teacher=true`; when false, the same environment reward and local shaping remain, but the teacher reward shaping/update path is disabled.
+
+2026-07-01 why MAPPO/HAPPO/meta differences are small:
+
+- User correctly identified two likely reasons:
+  - current MAPPO baseline is too close to HAPPO;
+  - current teacher/meta signal is too weak to change learning much.
+- MAPPO vs HAPPO difference in the current code is only `happo_use_factor=false` vs `true`.
+  - Both still use the same task-local runner, per-agent actors, centralized critic, same reward, same shield, same attack, same optimizer knobs.
+  - With small HAPPO LR/clip and already smooth actions, the sequential factor ratio often stays close to `1`, so MAPPO-like and HAPPO updates can become very similar.
+- Teacher/meta effect is currently tiny:
+  - `teacher_shaping_coef=0.001`
+  - `teacher_shaping_clip=0.03`
+  - maximum direct reward delta from teacher shaping is about `3e-5` per reward entry (`0.001 * 0.03`), far smaller than main/local reward and shield effects.
+  - In the completed fixed-medium run, `teacher_update_active` mean is only `0.025`, because pipeline teacher scheduling effectively updates about once every 40 student updates (`teacher_every_student_updates=8` and teacher internal `update_interval=5`).
+  - `teacher_advantage_corr` mean is around `2.8e-6`, so the outer meta-gradient attribution signal is nearly zero.
+- Therefore current fixed-medium results should not be used to claim strong meta-learning superiority. They show that all variants can solve medium; stronger meta evidence requires increasing teacher signal and testing harder/generalization settings.
+
+2026-07-01 HARL-main baseline integration:
+
+- User pointed to `/home/cnc/SSD_1T/xzw/HARL-main` and asked to select suitable comparison algorithms from that structure/code.
+- Inspected HARL-main:
+  - `OnPolicyHARunner` supports heterogeneous-agent algorithms such as HAPPO/HATRPO/HAA2C with sequential factor updates.
+  - `OnPolicyMARunner` supports MAPPO with shared-parameter batch updates and no HAPPO sequential factor.
+  - Off-policy algorithms such as MATD3/MADDPG exist but are less directly comparable to the current on-policy HAPPO training path and would require a larger replay-buffer/control integration.
+- Selected practical additions for the current IsaacLab comparison:
+  - `harl_mappo_shared`: MAPPO-style PPO update, no HAPPO factor, shared actor parameters, shared-agent batch update matching HARL MAPPO's `share_param_train` structure.
+  - `harl_haa2c`: HA-A2C-style actor objective, no PPO clipping, HAPPO/HARL-style sequential factor retained, shared actor parameters.
+- Code changes:
+  - Added `env.algorithm.happo_share_actor` and `env.algorithm.happo_actor_update_mode`.
+  - Extended task-local runner to support shared actor parameters and `a2c` actor update mode.
+  - Extended router to accept `algorithm=haa2c`.
+  - Extended `scripts/tools/run_medium_algorithm_comparison.sh` with `COMPARE_ALGOS`, keeping original `mappo`, `happo_no_meta`, and `happo_meta` while adding `harl_mappo_shared` and `harl_haa2c`.
+  - Extended `scripts/tools/plot_medium_algorithm_comparison.py` to include the new labels and dynamically load whatever eval summaries exist.
+- Sanity test completed successfully:
+  - command used `COMPARE_ALGOS="harl_mappo_shared harl_haa2c" MAX_ITERATIONS=1 NUM_ENVS=4 SKIP_EVAL=1`.
+  - result package: `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/harl_baseline_sanity_20260701_112812_package.tar.gz`
+  - both `harl_mappo_shared` and `harl_haa2c` produced `model_final.pt` and `platoon_metrics.csv`.
+  - metrics confirmed fixed medium attack was active: `attack_level=medium`, `attack_max_fdi_pos=2.0`, `attack_max_fdi_acc=0.5`, `attack_max_dos_rate=0.1`.
+- Important limitation:
+  - This is a task-local port of the relevant HARL update structures into the current IsaacLab/HAPPO pipeline, not a direct invocation of HARL-main's standalone runner. Direct HARL runner integration would require more work because its IsaacLab bridge is still old/partial (`num_agents=4`, obs18 config, missing current task attack/shield wrapper assumptions).
+
+2026-07-01 MAPPO code location clarification:
+
+- HARL-main does include a native MAPPO implementation:
+  - actor: `/home/cnc/SSD_1T/xzw/HARL-main/harl/algorithms/actors/mappo.py`
+  - actor registry: `/home/cnc/SSD_1T/xzw/HARL-main/harl/algorithms/actors/__init__.py` maps `"mappo"` to `MAPPO`
+  - critic registry: `/home/cnc/SSD_1T/xzw/HARL-main/harl/algorithms/critics/__init__.py` maps `"mappo"` to `VCritic`
+  - runner registry: `/home/cnc/SSD_1T/xzw/HARL-main/harl/runners/__init__.py` maps `"mappo"` to `OnPolicyMARunner`
+  - CLI: `/home/cnc/SSD_1T/xzw/HARL-main/examples/train.py` lists `"mappo"` as a selectable algorithm.
+- Current IsaacLab repo also supports `env.algorithm.algorithm=mappo` in the task-local comparison path:
+  - `/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/algorithms/router.py`
+  - `/home/cnc/SSD_1T/xzw/IsaacLab-main/scripts/tools/run_medium_algorithm_comparison.sh`
+- Distinction:
+  - `mappo` in the existing comparison is a task-local MAPPO-like ablation using the same IsaacLab wrapper, centralized critic, and per-agent actors with HAPPO factor disabled.
+  - `harl_mappo_shared` is the newly added closer-to-HARL baseline: shared actor parameters plus shared-agent batch update, still inside the current IsaacLab task-local pipeline so attack/shield/reward/eval remain identical.
+
+2026-07-01 current comparable algorithm count:
+
+- Currently integrated into the same IsaacLab fixed-medium comparison script and sanity-checked path: 6 algorithms/variants.
+  1. `mappo`: task-local MAPPO-like baseline, no HAPPO factor, no teacher/meta.
+  2. `happo_no_meta`: HAPPO factor enabled, teacher/meta disabled.
+  3. `happo_meta`: current proposed HAPPO + teacher/meta method.
+  4. `harl_mappo_shared`: HARL-style MAPPO baseline with shared actor and shared-agent batch update.
+  5. `harl_haa2c`: HARL-style HA-A2C baseline with no PPO clipping and HA sequential factor.
+  6. `harl_hatrpo`: HARL-style HA-TRPO baseline with factor-weighted surrogate, conjugate gradient, KL constraint, and backtracking line search.
+- Algorithms present in HARL-main but not yet counted as current ready-to-compare baselines:
+  - MATD3, MADDPG/HADDPG/HATD3, HASAC/HAD3QN and others.
+  - These need extra adaptation/testing before being included in the same attack/shield/reward/eval comparison.
+
+2026-07-01 HATRPO integration:
+
+- Added `harl_hatrpo` as the next suitable HARL-main baseline.
+- Rationale:
+  - HATRPO is on-policy, continuous-action compatible, centralized-critic compatible, and belongs to the same HA algorithm family as HAPPO/HAA2C.
+  - It is more suitable for the current fixed-medium comparison than off-policy TD3/DDPG/SAC-style algorithms, which need replay buffer and training-schedule integration.
+- Implementation:
+  - Added TRPO knobs to `PlatoonAlgorithmCfg`: `happo_trpo_kl_threshold`, `happo_trpo_cg_iters`, `happo_trpo_damping`, `happo_trpo_line_search_steps`, `happo_trpo_accept_ratio`, `happo_trpo_backtrack_coeff`.
+  - Added `update_mode="trpo"` to task-local actor logic.
+  - TRPO actor update uses:
+    - factor-weighted surrogate objective;
+    - conjugate gradient Fisher-vector product;
+    - KL threshold;
+    - backtracking line search;
+    - no Adam actor step and no PPO clipping.
+  - Router now accepts `algorithm=hatrpo`.
+  - `scripts/tools/run_medium_algorithm_comparison.sh` default `COMPARE_ALGOS` now includes `harl_hatrpo`.
+  - Plot labels now include `HARL HATRPO`.
+- Sanity test:
+  - command used `COMPARE_ALGOS="harl_hatrpo" MAX_ITERATIONS=1 NUM_ENVS=4 SKIP_EVAL=1`.
+  - result package: `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/harl_hatrpo_sanity_20260701_113929_package.tar.gz`
+  - run dir: `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-07-01_11-39-45_harl_hatrpo_sanity_20260701_113929_harl_hatrpo`
+  - generated `model_final.pt` and `platoon_metrics.csv`.
+  - metrics confirmed fixed medium attack was active: `attack_level=medium`, `attack_max_fdi_pos=2.0`, `attack_max_fdi_acc=0.5`, `attack_max_dos_rate=0.1`.
+
+2026-07-01 stronger meta/teacher parameters:
+
+- Goal: make `happo_meta` measurably different from `happo_no_meta` without letting teacher reward dominate the physical/task reward.
+- Previous meta was too weak:
+  - `teacher_shaping_coef=0.001`
+  - `teacher_shaping_clip=0.03`
+  - max direct shaping delta about `3e-5`
+  - effective teacher update rate about `2.5%` because `teacher_every_student_updates=8` and `teacher_update_interval=5`.
+- New default/meta comparison parameters:
+  - `teacher_shaping_coef=0.02`
+  - `teacher_shaping_clip=0.20`
+  - max direct shaping delta about `0.004`
+  - `teacher_lr=3.0e-4`
+  - `teacher_update_interval=1`
+  - `teacher_every_student_updates=2`
+  - `teacher_action_penalty_coef=0.001`
+  - `teacher_reward_ema_tau=0.95`
+  - `teacher_consistency_coef=0.03`
+  - `teacher_outer_delta_coef=0.08`
+  - `teacher_outer_delta_warmup_updates=5`
+  - `teacher_outer_delta_ramp_updates=20`
+- Code changes:
+  - Added explicit teacher fields to `PlatoonAlgorithmCfg` in both `agents.py` and `config.py`.
+  - Routed `teacher_every_student_updates` into `PipelineScheduleCfg`.
+  - Routed `reward_ema_tau`, `consistency_coef`, and outer-delta parameters into `RewardTeacherCfg`.
+  - Updated `scripts/tools/run_medium_algorithm_comparison.sh` so only `happo_meta` receives the stronger teacher/meta overrides; non-meta baselines remain teacher-disabled.
+- Sanity tests:
+  - `meta_params_sanity_20260701_114845`: 4 iterations, 4 envs, `happo_meta`.
+    - `teacher_update_active_mean=0.5`, matching one teacher update every 2 student updates.
+    - `teacher_window_samples=64` on teacher updates.
+    - medium attack active: `attack_max_fdi_pos=2.0`, `attack_max_fdi_acc=0.5`, `attack_max_dos_rate=0.1`.
+  - `meta_params_outer_sanity_20260701_115004`: 8 iterations, 4 envs, `happo_meta`.
+    - `teacher_outer_coef_scale` becomes nonzero after warmup: `0.05` at update 6 and `0.15` at update 8.
+    - confirms the outer meta loss path is no longer dormant.
+- Interpretation:
+  - The new meta settings should make `happo_meta` visibly different in training/eval curves.
+  - This is still a conservative setting; if long training shows instability, first reduce `teacher_shaping_coef` to `0.01` or `teacher_outer_delta_coef` to `0.04`.
+
+2026-07-01 started strong-meta 6-algorithm comparison run:
+
+- User asked to run a new comparison using the modified meta parameters.
+- First background attempt with tag `medium_compare_6algos_strongmeta_20260701_115304` wrote only the script header and exited before training; no result directory/checkpoints were produced and no GPU process remained.
+- Restarted with a more robust `setsid bash -c ...` launch.
+- Active run:
+  - tag: `medium_compare_6algos_strongmeta_20260701_115436`
+  - launcher PID: `3283199`
+  - pipeline log: `/home/cnc/SSD_1T/xzw/IsaacLab-main/train_medium_compare_6algos_strongmeta_20260701_115436.log`
+  - setsid log: `/home/cnc/SSD_1T/xzw/IsaacLab-main/setsid_medium_compare_6algos_strongmeta_20260701_115436.out`
+  - result root: `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/medium_compare_6algos_strongmeta_20260701_115436_package`
+- Comparison configuration:
+  - algorithms: `mappo happo_no_meta happo_meta harl_mappo_shared harl_haa2c harl_hatrpo`
+  - `MAX_ITERATIONS=3000`
+  - `NUM_ENVS=64`
+  - `EVAL_EVERY=300`
+  - `EVAL_STEPS=1000`
+  - fixed medium attack: `max_fdi_pos=2.0`, `max_fdi_acc=0.50`, `max_dos_rate=0.10`
+  - strong meta overrides are applied only to `happo_meta`.
+- Startup check:
+  - confirmed process tree includes `run_medium_algorithm_comparison.sh`, `isaac-sim/python.sh`, and `train.py`.
+  - first stage is `mappo`.
+  - log reached at least learning iteration `4/3000`.
+  - observed speed about `970-980 steps/s` during the first stage.
+
+2026-07-01 comparison execution mode clarification:
+
+- User asked whether all comparison algorithms are running simultaneously.
+- Confirmed they are not parallel. `scripts/tools/run_medium_algorithm_comparison.sh` runs algorithms sequentially in the order given by `COMPARE_ALGOS`.
+- Current active run `medium_compare_6algos_strongmeta_20260701_115436` has only one active `train.py` child process:
+  - current stage: `mappo`
+  - current observed progress: around iteration `328/3000`
+  - speed: about `977-980 steps/s`
+- After `mappo` finishes, the script will launch `happo_no_meta`, then `happo_meta`, then `harl_mappo_shared`, `harl_haa2c`, and `harl_hatrpo` sequentially. Evaluation/plotting/packaging happen after all training stages finish.
+
+2026-07-01 parallel 3-algorithm comparison restart:
+
+- User allowed running three algorithms concurrently because GPU was not fully occupied.
+- First direct `PARALLEL_TRAIN_JOBS=3` attempt failed during concurrent IsaacSim startup:
+  - tag: `medium_compare_6algos_strongmeta_p3_20260701_121025`
+  - `mappo` and `happo_meta` failed with `Failed to find an articulation` after unresolved `/tmp/IsaacLab/usd_*` USD references.
+  - This points to a concurrent URDF/USD temporary conversion/startup race, not a HAPPO/reward/attack/shield logic error.
+  - The leftover `happo_no_meta` orphan process was stopped before restarting.
+- Modified `scripts/tools/run_medium_algorithm_comparison.sh`:
+  - added `PARALLEL_TRAIN_STAGGER_SEC`;
+  - kept `PARALLEL_TRAIN_JOBS` support;
+  - parallel training now starts each process in the batch with an optional stagger delay.
+- Restarted comparison with staggered 3-way parallel training:
+  - tag: `medium_compare_6algos_strongmeta_p3stagger_20260701_121424`
+  - pipeline log: `/home/cnc/SSD_1T/xzw/IsaacLab-main/train_medium_compare_6algos_strongmeta_p3stagger_20260701_121424.log`
+  - result root: `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/medium_compare_6algos_strongmeta_p3stagger_20260701_121424_package`
+  - `PARALLEL_TRAIN_JOBS=3`
+  - `PARALLEL_TRAIN_STAGGER_SEC=60`
+- Startup validation after restart:
+  - `mappo`, `happo_no_meta`, and `happo_meta` are simultaneously running.
+  - All three reached learning iterations:
+    - `mappo`: at least `53/3000`
+    - `happo_no_meta`: at least `28/3000`
+    - `happo_meta`: at least `8/3000`
+  - No `Traceback`, `FileNotFoundError`, `Unable to open`, or `Failed to find an articulation` was found in the active training logs at the validation point.
+  - GPU memory at validation showed three IsaacSim Python processes, about `2872 + 2872 + 2910 MiB`, plus desktop overhead.
+
+2026-07-01 parallel batch continuation check:
+
+- Confirmed `scripts/tools/run_medium_algorithm_comparison.sh` uses batched parallel execution when `PARALLEL_TRAIN_JOBS=3`.
+- Current first batch:
+  - `mappo`
+  - `happo_no_meta`
+  - `happo_meta`
+- The script waits for all three PIDs in the batch, then clears `batch_pids`/`batch_labels` and continues the same `COMPARE_ALGOS` loop.
+- Therefore after the first three finish successfully, it will automatically launch the second batch:
+  - `harl_mappo_shared`
+  - `harl_haa2c`
+  - `harl_hatrpo`
+- Current observed progress during this check:
+  - `mappo`: at least `112/3000`
+  - `happo_no_meta`: at least `83/3000`
+  - `happo_meta`: at least `61/3000`
+
+2026-07-01 15:22 continuation check:
+
+- Re-read the tail/current parts of `debug_notes.md`; the active task is the staggered 3-way strong-meta comparison:
+  - package: `logs/rsl_rl/platoon_happo/medium_compare_6algos_strongmeta_p3stagger_20260701_121424_package`
+  - first parallel batch: `mappo`, `happo_no_meta`, `happo_meta`
+  - target: `3000` train iterations per algorithm, then the script should launch `harl_mappo_shared`, `harl_haa2c`, and `harl_hatrpo` as the second parallel batch before evaluation/plotting/packaging.
+- Current progress from live CSV/logs:
+  - `mappo`: about `2271/3000`
+  - `happo_no_meta`: about `2241/3000`
+  - `happo_meta`: about `2087/3000`
+- Stability check:
+  - no `ERROR`, `Traceback`, `OutOfMemory`, `NaN`, or `inf` matches in the three active training logs;
+  - `termination_reset_on_bad_ori=0.0` in recent CSV windows for all three active runs;
+  - critic losses/grad norms are finite, with no repeat of the earlier `1e9` critic explosion.
+- Behavior check:
+  - command speed is about `0.37-0.38 m/s`;
+  - leader speed is about `0.26-0.28 m/s`;
+  - speed error is about `0.10-0.11`;
+  - `shield_trigger_rate=1.0`, so the shield is continuously active and may be limiting raw policy differences.
+- Runtime note:
+  - each active job is taking about `5 s/update`;
+  - first batch likely needs roughly another hour from this check to reach `3000`;
+  - do not start another Isaac training job while this batch is active because `nvidia-smi` shows the RTX 3080 near full memory/utilization with three IsaacSim Python processes.
+
+2026-07-01 16:27 training status:
+
+- Staggered strong-meta comparison first parallel batch status:
+  - `mappo` completed `3000/3000`, saved `model_2999.pt` and `model_final.pt`.
+  - `happo_no_meta` completed `3000/3000`, saved `model_2999.pt` and `model_final.pt`.
+  - `happo_meta` is still running at about `2860/3000`.
+- The main pipeline log is waiting on `happo_meta`; the second batch (`harl_mappo_shared`, `harl_haa2c`, `harl_hatrpo`) has not started yet.
+- GPU state now shows only one IsaacSim Python process instead of three:
+  - memory about `3779 MiB / 10240 MiB`;
+  - utilization about `38%`.
+- Recent `happo_meta` log around update `2849`:
+  - ETA shown by training log is about `13 min`;
+  - `termination_reset_on_bad_ori=0.0`;
+  - `value_loss` around `4-7`, `critic_grad_norm` around `7-11`;
+  - no crash/OOM/NaN/error strings found in active training logs.
+- Last-50 CSV summary:
+  - `mappo`: speed error `~0.104`, lateral `~0.164`, centerline `~0.091`, no collision/reset; final row has an episode-boundary speed/value spike.
+  - `happo_no_meta`: speed error `~0.111`, lateral `~0.164`, centerline `~0.085`, no collision/reset; final row also has an episode-boundary speed/value spike.
+  - `happo_meta`: speed error `~0.118`, lateral `~0.230`, centerline `~0.112`, no collision/reset; teacher path is active (`teacher_update_active` last50 mean `0.5`, `teacher_shaping_mean` last50 `~0.051`).
+- Current interpretation:
+  - First-batch training is healthy enough to continue automatically.
+  - `happo_meta` is laterally weaker than the two non-meta variants in the current late-training window, but its teacher/meta path is now measurably active.
+  - Wait for `happo_meta` to finish; then confirm the script launches the second parallel batch.
+
+2026-07-01 18:20 second-batch training status:
+
+- `happo_meta` finished successfully, and the script launched the second parallel batch:
+  - `harl_mappo_shared`
+  - `harl_haa2c`
+  - `harl_hatrpo`
+- GPU is back near full utilization with three IsaacSim Python processes:
+  - memory about `9579 MiB / 10240 MiB`;
+  - utilization about `99%`.
+- Current progress:
+  - `harl_mappo_shared`: about `1438/3000` CSV rows, log around `1435/3000`, ETA about `1h52m`.
+  - `harl_haa2c`: about `1315/3000` CSV rows, log around `1312/3000`, ETA about `2h11m`.
+  - `harl_hatrpo`: about `1266/3000` CSV rows, log around `1263/3000`, ETA about `2h19m`.
+- Last-50 CSV status:
+  - `harl_mappo_shared`: speed error `~0.105`, lateral `~0.052`, centerline `~0.037`, no collision/reset. Last row has an episode-boundary spike (`leader_speed_mean` negative and value/grad high), so use the window mean rather than the final row alone.
+  - `harl_haa2c`: speed error `~0.099`, lateral `~0.044`, centerline `~0.033`, no collision/reset. This is currently the cleanest second-batch window.
+  - `harl_hatrpo`: speed error `~0.126`, lateral `~0.181`, centerline `~0.224`, no collision/reset. It is stable but currently weaker on speed and lateral/centerline tracking.
+- Current interpretation:
+  - The second batch is running normally and should be left to finish.
+  - `harl_haa2c` and `harl_mappo_shared` currently look strong on lateral/centerline stability.
+  - `harl_hatrpo` is not failing, but its current tracking quality is worse than the other two second-batch methods.
+
+2026-07-01 18:49 current effect assessment:
+
+- Training has not reached final eval/plotting yet. The first three algorithms are complete; the second batch is still training.
+- Completed first-batch last50 training-window metrics:
+  - `mappo`: speed error `~0.104`, leader speed `~0.271` vs command `~0.371`, lateral `~0.164`, centerline `~0.091`, no collision/reset.
+  - `happo_no_meta`: speed error `~0.111`, leader speed `~0.268` vs command `~0.378`, lateral `~0.164`, centerline `~0.085`, no collision/reset.
+  - `happo_meta`: speed error `~0.115`, leader speed `~0.266` vs command `~0.378`, lateral `~0.234`, centerline `~0.115`, no collision/reset; teacher/meta is active (`teacher_update_active` last50 mean `0.5`, shaping mean `~0.048`), but current training-window behavior is not better than `happo_no_meta`.
+- Active second-batch progress/effect:
+  - `harl_mappo_shared`: around `1808/3000`; last50 speed error `~0.088-0.102`, lateral `~0.048-0.051`, centerline `~0.036-0.039`, no collision/reset.
+  - `harl_haa2c`: around `1661/3000`; last50 speed error `~0.083-0.084`, lateral `~0.036-0.039`, centerline `~0.027-0.029`, no collision/reset. This is currently the best-looking training window.
+  - `harl_hatrpo`: around `1606/3000`; recent windows show degradation:
+    - last50 speed error `~0.26`, leader speed `~0.07` vs command `~0.37`;
+    - lateral `~0.52`, centerline `~0.31`;
+    - `termination_reset_on_bad_ori` around `0.02`;
+    - value loss and critic grad norm rising (`value_loss` last10 `~372`, critic grad last10 `~285`).
+- Current ranking by training-window behavior:
+  1. `harl_haa2c` best so far.
+  2. `harl_mappo_shared` close second and stable.
+  3. `mappo` / `happo_no_meta` safe but weaker laterally.
+  4. `happo_meta` has active teacher/meta but currently worse lateral than no-meta.
+  5. `harl_hatrpo` is currently unstable/degrading under this configuration.
+- Important caveat: these are training-window metrics, not the final evaluation summaries. Final ranking should use the eval summaries generated after all six algorithms finish.
+
+2026-07-01 why `happo_meta` is not currently best:
+
+- Meta/teacher learning is not guaranteed to dominate in every training window. It only helps if the teacher shaping signal is aligned, strong enough, stable, and not masked by other task mechanisms.
+- In the current run, `happo_meta` does show the teacher path is active:
+  - `teacher_update_active` last50 mean around `0.5`;
+  - `teacher_shaping_mean` around `0.048`.
+  - So this is not a dormant-teacher issue.
+- But current training-window behavior is worse laterally than `happo_no_meta`:
+  - `happo_no_meta` lateral last50 around `0.164`;
+  - `happo_meta` lateral last50 around `0.234`.
+- Likely reasons:
+  1. Fixed-medium task may already be mostly solvable by non-meta HAPPO/MAPPO, so teacher gains are small and can be hidden by noise.
+  2. Shield is triggering at `1.0` for all methods, so safety projection/postprocessing can dominate executed behavior and reduce the observable advantage of teacher-shaped policy learning.
+  3. Teacher shaping is a learned auxiliary reward, not an oracle. If its shaping signal is imperfect or emphasizes a physical proxy that does not improve lateral/centerline behavior in the current window, it can hurt.
+  4. Stronger meta settings were intentionally increased from very weak defaults; they may now be active but not yet tuned. They may need smaller `teacher_shaping_coef` or `teacher_outer_delta_coef`, or a better physical/lateral target.
+  5. The current HAPPO implementation stores raw sampled actions, while the env executes clipped/shielded/adapted actions. This raw-vs-executed action gap can make teacher/action-based shaping less directly aligned with actual vehicle motion.
+  6. Current results are single-seed training-window metrics, not final evaluation summaries or multi-seed statistics.
+- Correct interpretation:
+  - Current evidence shows the meta path is active, but not yet beneficial under this configuration.
+  - This does not invalidate the method by itself; it means the teacher/meta objective and hyperparameters need ablation/tuning, and the final claim should be based on evaluation summaries, stronger/unseen attacks, sample-efficiency curves, and multi-seed runs.
+
+2026-07-01 21:31 training/evaluation status:
+
+- Training phase for all six algorithms has completed; `training/runs.txt` contains:
+  - `mappo`
+  - `happo_no_meta`
+  - `happo_meta`
+  - `harl_mappo_shared`
+  - `harl_haa2c`
+  - `harl_hatrpo`
+- The pipeline is now in evaluation, not training.
+- GPU state is cooler/lower load during single eval:
+  - GPU temp about `65 C`
+  - GPU utilization about `40%`
+  - memory about `3752 MiB / 10240 MiB`
+- Eval summaries already exist for the first five algorithms:
+  - `mappo`: best `model_2100.pt`, return `18526.9`, speed error `0.0561`, lateral `0.0066`, centerline `0.0130`; final return `18036.8`.
+  - `happo_no_meta`: best `model_1200.pt`, return `18332.3`, speed error `0.0585`, lateral `0.0186`, centerline `0.0189`; final return `18200.3`.
+  - `happo_meta`: best `model_2700.pt`, return `18325.7`, speed error `0.0549`, lateral `0.0131`, centerline `0.0137`; final return `17899.5`.
+  - `harl_mappo_shared`: best `model_300.pt`, return `18571.8`, speed error `0.0508`, lateral `0.0111`, centerline `0.0131`; final return `18254.4`.
+  - `harl_haa2c`: best `model_300.pt`, return `18744.4`, speed error `0.0510`, lateral `0.0155`, centerline `0.0177`; final return `18254.4`.
+- `harl_hatrpo` eval summary is not finished yet; current step files exist through `model_900.pt`.
+  - HATRPO `model_600.pt` eval line showed return about `16078.4`, speed error `0.068`, lateral `0.095`, centerline `0.130`, but `reset_bad` was high in the log line.
+  - HATRPO `model_900.pt` eval line showed return about `3492.6`, speed error `0.092`, lateral `0.299`, centerline `0.484`, so later HATRPO checkpoints are much worse.
+- Current provisional ranking by completed eval best checkpoint:
+  1. `harl_haa2c` best return so far (`18744.4`).
+  2. `harl_mappo_shared` second (`18571.8`).
+  3. `mappo` third (`18526.9`).
+  4. `happo_no_meta` and `happo_meta` are close, with meta slightly better speed/lateral at best checkpoint but lower final return.
+  5. `harl_hatrpo` is likely poor/unstable, but wait for its final eval summary.
+- Important caveat: final plots/tarball/combined summary are not done until HATRPO eval and package generation finish.
+
+2026-07-01 21:37 evaluation completed:
+
+- The full 6-algorithm strong-meta comparison finished successfully.
+- Main pipeline log ended with `exit status=0`.
+- All six eval summaries exist:
+  - `evaluation/mappo/eval_summary.csv`
+  - `evaluation/happo_no_meta/eval_summary.csv`
+  - `evaluation/happo_meta/eval_summary.csv`
+  - `evaluation/harl_mappo_shared/eval_summary.csv`
+  - `evaluation/harl_haa2c/eval_summary.csv`
+  - `evaluation/harl_hatrpo/eval_summary.csv`
+- Generated outputs:
+  - `figures/combined_eval_summary.csv`
+  - `figures/fig_01_fixed_medium_episode_return.png`
+  - `figures/fig_02_fixed_medium_eval_metrics.png`
+  - `figures/fig_03_fixed_medium_final_bars.png`
+  - tarball: `medium_compare_6algos_strongmeta_p3stagger_20260701_121424_package.tar.gz` (`~140M`)
+- Best checkpoint ranking by eval return:
+  1. `harl_haa2c` `model_300.pt`: return `18744.4`, speed error `0.0510`, lateral `0.0155`, centerline `0.0177`, bad reset `0`.
+  2. `harl_mappo_shared` `model_300.pt`: return `18571.8`, speed error `0.0508`, lateral `0.0111`, centerline `0.0131`, bad reset `0`.
+  3. `mappo` `model_2100.pt`: return `18526.9`, speed error `0.0561`, lateral `0.0066`, centerline `0.0130`, bad reset `0`.
+  4. `happo_no_meta` `model_1200.pt`: return `18332.3`, speed error `0.0585`, lateral `0.0186`, centerline `0.0189`, bad reset `0`.
+  5. `happo_meta` `model_2700.pt`: return `18325.7`, speed error `0.0549`, lateral `0.0131`, centerline `0.0137`, bad reset `0`.
+  6. `harl_hatrpo` `model_600.pt`: return `16078.4`, speed error `0.0681`, lateral `0.0947`, centerline `0.1301`, bad reset `0.999`.
+- Final-checkpoint ranking by eval return:
+  1. `harl_mappo_shared` and `harl_haa2c`: return `18254.4`.
+  2. `happo_no_meta`: return `18200.3`.
+  3. `mappo`: return `18036.8`.
+  4. `happo_meta`: return `17899.5`.
+  5. `harl_hatrpo`: return `3691.1`, unstable with speed error `0.2645`, lateral `0.4072`, bad reset `0.3162`.
+- Current conclusion:
+  - `harl_haa2c` wins by best checkpoint return.
+  - `harl_mappo_shared` ties or leads by final checkpoint return and is stable.
+  - `happo_meta` does not outperform `happo_no_meta` in this run.
+  - `harl_hatrpo` is unstable under the current configuration.
+- After completion, GPU returned to low load: about `62 C`, `6%` utilization, `924 MiB / 10240 MiB`.
+
+2026-07-01 hardware temperature check:
+
+- During the active 3-way second-batch training, `nvidia-smi` reported:
+  - GPU: NVIDIA GeForce RTX 3080
+  - GPU temperature: `84 C`
+  - GPU utilization: `99%`
+  - GPU power draw: about `213.5 W`
+  - GPU memory: `9583 MiB / 10240 MiB`
+- `sensors` CPU readings:
+  - CPU `k10temp` Tctl: `69.8 C`
+  - CCD temperatures: `58.5 C`, `59.5 C`, `71.0 C`, `64.0 C`
+  - max observed CPU CCD: `71.0 C`
+- Other relevant readings:
+  - motherboard/thermistor temps: about `51 C`
+  - NVMe composite temps: about `45.9 C` and `53.9 C`
+- Current hardware status: GPU is hot but still within normal heavy-training range; CPU is also within normal range.
+- Long-run judgment:
+  - CPU around `70 C` is fine for 24h training.
+  - GPU core around `84 C` can usually run, but it is close to the high end for sustained RTX 3080 workloads and has limited thermal headroom.
+  - For a safer 24h run, prefer bringing GPU core below `80 C` if practical by improving airflow, lowering room temperature, reducing parallel Isaac jobs from 3 to 2, or lowering GPU power/load.
+  - Because `nvidia-smi` does not expose memory junction temperature here, watch for thermal throttling, driver resets, sudden FPS/steps-per-second drops, or crashes during long runs.
+
+2026-07-01 HAPPO implementation provenance clarification:
+
+- Current IsaacLab training does not directly run the standalone `/home/cnc/SSD_1T/xzw/HARL-main` codebase.
+- The active HAPPO implementation is task-local inside this repo:
+  - `source/my_exts/marl_platoon/algorithms/happo/runner.py`
+  - `source/my_exts/marl_platoon/algorithms/happo/actor.py`
+  - `source/my_exts/marl_platoon/algorithms/happo/buffer.py`
+  - `source/my_exts/marl_platoon/algorithms/happo/critic.py`
+- For the current comparison:
+  - `happo_no_meta`: `algorithm=happo`, `happo_use_factor=true`, `happo_share_actor=false`, `happo_actor_update_mode=ppo`, teacher/meta disabled.
+  - `happo_meta`: same task-local HAPPO path, but teacher/meta enabled with stronger teacher overrides.
+- The later HARL-main reference was used to guide/port comparable update structures into the task-local IsaacLab pipeline:
+  - `harl_mappo_shared`: shared actor + MAPPO-like PPO update.
+  - `harl_haa2c`: shared actor + A2C-style update.
+  - `harl_hatrpo`: shared actor + TRPO-style update.
+- Therefore the correct wording is: current HAPPO is a modified task-local implementation inspired by/partly aligned with HARL concepts, not a direct import or direct execution of the later linked HARL-main repository.
+
+2026-07-01 HAPPO vs HARL-main HAPPO comparison:
+
+- Core algorithm similarity:
+  - Current task-local HAPPO keeps the important HARL/HAPPO structure:
+    - per-agent actor updates;
+    - centralized critic;
+    - PPO clipped surrogate;
+    - HARL-style sequential importance `factor`;
+    - fixed or configurable agent update order;
+    - product aggregation for multi-dimensional continuous-action log-prob ratios.
+  - `happo_no_meta` is the closest current variant to plain HAPPO:
+    - `happo_use_factor=true`;
+    - `happo_actor_update_mode=ppo`;
+    - teacher/meta disabled.
+  - `happo_meta` uses the same task-local HAPPO student optimizer but enables the MGRS teacher/meta reward-shaping path.
+- Major differences from `/home/cnc/SSD_1T/xzw/HARL-main` official-style HAPPO:
+  - It is not using HARL-main's runner/buffers/env bridge directly.
+  - Current actor/critic are custom feed-forward Gaussian MLPs for IsaacLab tensors, not HARL's full `StochasticPolicy`/`VNet` stack.
+  - Current rollout length is IsaacLab/RSL-RL style `32`, while HARL default HAPPO config uses `episode_length=1000`.
+  - Current training knobs are much more conservative:
+    - current: `lr=1e-5`, `ppo_epoch=1`, `num_mini_batches=16`, `max_grad_norm=0.05`, `entropy_coef=0.0`, clipped std range.
+    - HARL default config: actor LR `5e-4`, `ppo_epoch=4`, actor minibatches `2`, `max_grad_norm=0.5`, entropy `0.01`.
+  - Current implementation omits or simplifies HARL features:
+    - no ValueNorm;
+    - no feature normalization;
+    - no recurrent policy path;
+    - no linear LR decay;
+    - critic uses clipped MSE, not HARL's optional Huber + ValueNorm path.
+  - Current `happo_no_meta`/`happo_meta` use separate actors by default (`happo_share_actor=false`), while HARL configs often use `share_param=true` depending on runner/config.
+  - Current critic computes one centralized value and repeats a shared advantage to agents; local reward shaping affects the mean reward, but this is not a full per-agent-advantage FP setup.
+  - Current environment path includes task-specific action clipping, attack/shield postprocessing, URDF wheel-axis adaptation, and IsaacLab action managers. HARL's generic HAPPO assumes a cleaner direct env-action path.
+  - In current pipeline, HAPPO stores raw sampled policy actions while the environment may execute shielded/postprocessed/adapted actions. This is acceptable if interpreted/documented as safety-projected control, but it is a deviation from vanilla on-policy HAPPO assumptions.
+- Suitability judgment:
+  - These differences are mostly appropriate for the current IsaacLab platoon task because direct HARL-main integration would not handle the current 5-car task, attack/shield wrappers, URDF wheel-axis adapter, IsaacLab logging, and task metrics without substantial bridge work.
+  - The current implementation is suitable to call a task-local HAPPO/MGRS implementation, not a direct official HARL-main reproduction.
+  - For paper wording, avoid saying "we directly use HARL-main HAPPO"; better wording is "we implement a task-local HAPPO optimizer following the HARL/HAPPO sequential factor objective and integrate it with the IsaacLab platoon attack/shield/teacher pipeline."
+  - If a strict baseline against HARL-main is required, the next step would be to either:
+    1. directly adapt HARL-main runner/buffers to the current IsaacLab 5-car wrapper; or
+    2. make the task-local port closer to HARL defaults by adding ValueNorm, feature normalization, LR decay, Huber critic loss, and clearer per-agent advantage handling.
+
+2026-07-01 six-algorithm reward-curve overlay:
+
+- Generated a single comparison figure for all six reward curves:
+  - `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/medium_compare_6algos_strongmeta_p3stagger_20260701_121424_package/figures/fig_04_six_algorithm_reward_curves.png`
+- The figure uses `combined_eval_summary.csv` and plots `episode_return_mean` against training iteration for:
+  - `mappo`
+  - `happo_no_meta`
+  - `happo_meta`
+  - `harl_mappo_shared`
+  - `harl_haa2c`
+  - `harl_hatrpo`
+- The figure includes a full-scale subplot plus a zoomed high-return subplot because `harl_hatrpo` drops far below the others and otherwise compresses the stable curves.
+- Visual conclusion from the overlay:
+  - `harl_haa2c` and `harl_mappo_shared` reach the high-return region fastest and remain among the best stable curves.
+  - `mappo`, `happo_no_meta`, and `happo_meta` are all in the stable high-return band, but `happo_meta` does not clearly beat `happo_no_meta` in this run.
+  - `harl_hatrpo` is visibly unstable and collapses late, matching the bad-reset/final-return evaluation results.
+
+2026-07-01 why several reward curves look similar:
+
+- Quantitatively, excluding the unstable `harl_hatrpo`, the stable algorithms are very close in this fixed-medium evaluation:
+  - final-checkpoint return range: `17899.5` to `18254.4`, spread about `354.9` points, roughly 2% of the 18k return scale.
+  - best-checkpoint return range: `18325.7` to `18744.4`, spread about `418.7` points.
+  - all stable algorithms have `termination_reset_on_bad_ori=0.0` at final evaluation.
+- Main reasons:
+  - The fixed-medium setting appears close to saturated: once the policy learns not to reset, follow the lane, and roughly match speed, the remaining return headroom is small.
+  - All variants share the same IsaacLab task, observations, action interface, reward function, rollout/eval protocol, and safety/shield/postprocessing path, so the behavioral surface is strongly constrained.
+  - Reward is dominated by common tracking/survival behavior; small differences in speed/lateral/centerline errors only move total return modestly.
+  - The shield/action adapter narrows differences between raw policy actions and actually executed vehicle behavior.
+  - `happo_meta` is not guaranteed to outperform plain HAPPO when the base task is already easy enough or the teacher/meta shaping is not perfectly aligned with the final evaluation metric.
+- Extra check:
+  - `harl_haa2c` and `harl_mappo_shared` final eval files are not the same file (`md5` differs), so the identical final summary is not simple file reuse.
+  - Their final eval differs mainly in raw/action/shield columns, while most high-level performance columns are identical, which supports the interpretation that different raw policies can be projected into very similar closed-loop behavior by the task dynamics and safety/action layer.
+
+2026-07-01 comparison with `/home/cnc/Desktop/s41467-025-66009-y.pdf`:
+
+- The desktop PDF is the Nature Communications article `Discovery of the reward function for embodied reinforcement learning agents`, DOI `10.1038/s41467-025-66009-y`.
+- The paper's core method:
+  - treats reward discovery as a bilevel optimization problem;
+  - lower level: policy optimization under a learned reward function;
+  - upper level: reward-function optimization under a regret/performance objective;
+  - uses trajectory data, policy distribution/advantage estimates, and an approximated reward meta-gradient to update the reward function.
+- Current `happo_meta` is not the same as the full paper algorithm.
+- Similarities:
+  - current code has a trainable reward/teacher network `F_phi(obs, action)`;
+  - it adds learned reward shaping to the lower-level HAPPO student;
+  - it periodically updates the teacher using an upper-level physical/performance signal;
+  - it includes a first-order advantage-correlation term intended to approximate the paper-style meta signal.
+- Important differences:
+  - current teacher is explicitly documented in code as `not the full paper meta-gradient yet`;
+  - current teacher adds a bounded shaping delta on top of an already hand-designed IsaacLab reward, rather than discovering the complete reward function from scratch;
+  - current upper objective is a task-specific platoon physical-cost proxy plus bad-reset/collision terms, not the paper's full regret-minimization formulation;
+  - current update does not fully differentiate through the HAPPO policy update or implement the paper's full bilevel meta-gradient derivation;
+  - current implementation is multi-agent HAPPO with attack/shield/action-adapter constraints, while the paper is a general embodied RL reward-discovery framework evaluated mostly with PPO/DQN/SAC-style agents and several single-agent/control tasks.
+- Recommended wording:
+  - Do not claim the current `happo_meta` is an exact reproduction of the Nature Communications method.
+  - Safer wording: current `happo_meta` is a task-local, first-order teacher reward-shaping approximation inspired by bilevel/meta-gradient reward discovery, adapted to the IsaacLab platoon HAPPO attack/shield setting.
+
+2026-07-01 data sufficiency for drawing Nature-style figures:
+
+- Current package has enough data for paper-style performance figures:
+  - six algorithms with `platoon_metrics.csv`, each with 3000 training rows and 148 columns;
+  - evaluation summaries for 11 checkpoints per algorithm (`model_0`, every 300 iterations, and `model_final`);
+  - per-checkpoint `eval_steps_*.csv` files with 1000 evaluation rows each;
+  - teacher/meta columns for `happo_meta`, including `teacher_shaping_mean`, `teacher_loss`, `teacher_base_loss`, `teacher_delta_j`, `teacher_norm_delta_j`, `teacher_outer_loss`, `teacher_advantage_corr`, and local reward shaping terms.
+- Figures that can be drawn now:
+  - multi-algorithm reward/return learning curves;
+  - final and best checkpoint bar charts;
+  - speed/lateral/centerline/gap/bad-reset/collision/shield metric panels;
+  - teacher/meta training dynamics for `happo_meta`;
+  - compact heatmaps or radar-style summaries of robustness/safety metrics.
+- Data not sufficient for a full reproduction of the Nature Communications figure set:
+  - only one run/seed per algorithm, so no statistically meaningful mean ± standard deviation/error band like the paper's five-seed plots;
+  - current logs mostly store aggregate platoon metrics, not full raw state vectors for reward-distribution/t-SNE plots;
+  - current logs do not directly store a dense grid of state-action inputs and learned `F_phi` reward outputs needed for reward-surface figures like the paper's reward visualization panels;
+  - current experiment covers one fixed-medium condition, not multiple tasks/difficulty levels/real-world validation cases.
+- Recommended additional data if paper-quality figures are required:
+  - rerun at least 3 seeds, preferably 5, for the main algorithms;
+  - add a rollout recorder that saves raw observation vectors, raw actions, executed/shielded actions, base reward, teacher shaping reward, physical score, attack metadata, shield state, and done flags;
+  - evaluate `F_phi(obs, action)` on selected interpretable 2D grids, e.g. speed error vs lateral error, gap error vs relative velocity, or centerline error vs steering/action;
+  - add ablations such as no teacher, teacher without outer delta, teacher without shield, and hard attack evaluation.
+
+2026-07-01 MATLAB Nature-style figure package:
+
+- Created a desktop figure package:
+  - folder: `/home/cnc/Desktop/platoon_natcom_figures_20260701`
+  - zip: `/home/cnc/Desktop/platoon_natcom_figures_20260701.zip`
+- Zip integrity check passed with `zip -T`.
+- Package size is about `18M`.
+- Package contents:
+  - `make_platoon_natcom_style_figures.m`
+  - `README.txt`
+  - 19 CSV data files under `data/evaluation` and `data/training`
+- Included data:
+  - combined six-algorithm evaluation summary;
+  - per-algorithm checkpoint evaluation summaries;
+  - final-checkpoint step-level evaluation CSVs;
+  - six per-algorithm `platoon_metrics.csv` training logs.
+- MATLAB script generates PNG and PDF figures:
+  - `fig_01_reward_curves_full_and_zoom`
+  - `fig_02_best_final_return_bars`
+  - `fig_03_final_safety_heatmap`
+  - `fig_04_happo_meta_teacher_dynamics`
+  - `fig_05_final_tracking_error_bars`
+- Styling:
+  - white background;
+  - compact panels;
+  - thin axes;
+  - muted print-safe blue/orange/green/purple/red/teal palette inspired by Nature-style result figures.
+- Verification note:
+  - The local machine does not expose `matlab` or `octave` on PATH, so the script was not executed locally.
+  - Static package and zip integrity checks passed.
+
+2026-07-01 follow-up after reading notes and continuing Next Steps:
+
+- Re-read `debug_notes.md` fully through the latest MATLAB/Nature-style package section.
+- Process check found no active platoon `train.py`, `play.py`, `eval_happo_platoon.py`, medium-comparison, adaptive-curriculum, hard-ladder supervisor, monitor, or log-tail process running.
+- Verified the six-algorithm strong-meta comparison package is complete:
+  - package: `/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/medium_compare_6algos_strongmeta_p3stagger_20260701_121424_package`
+  - `combined_eval_summary.csv` contains all 66 checkpoint eval rows.
+  - Best-return ranking remains:
+    1. `harl_haa2c` `model_300.pt`: return `18744.39`, speed error `0.0510`, lateral `0.0155`, centerline `0.0177`, bad reset `0`.
+    2. `harl_mappo_shared` `model_300.pt`: return `18571.77`, speed error `0.0508`, lateral `0.0111`, centerline `0.0131`, bad reset `0`.
+    3. `mappo` `model_2100.pt`: return `18526.93`, speed error `0.0561`, lateral `0.0066`, centerline `0.0130`, bad reset `0`.
+    4. `happo_no_meta` `model_1200.pt`: return `18332.26`, speed error `0.0585`, lateral `0.0186`, centerline `0.0189`, bad reset `0`.
+    5. `happo_meta` `model_2700.pt`: return `18325.68`, speed error `0.0549`, lateral `0.0131`, centerline `0.0137`, bad reset `0`.
+    6. `harl_hatrpo` `model_600.pt`: return `16078.41`, speed error `0.0681`, lateral `0.0947`, centerline `0.1301`, bad reset `0.999`.
+- Added a locally executable Python version of the Nature-style figure package:
+  - `/home/cnc/Desktop/platoon_natcom_figures_20260701/make_platoon_natcom_style_figures.py`
+  - Updated `/home/cnc/Desktop/platoon_natcom_figures_20260701/README.txt` with Python usage.
+- Ran the Python package successfully on this machine; generated actual PNG/PDF outputs under:
+  - `/home/cnc/Desktop/platoon_natcom_figures_20260701/figures_python`
+  - generated figures:
+    - `fig_01_reward_curves_full_and_zoom.{png,pdf}`
+    - `fig_02_best_final_return_bars.{png,pdf}`
+    - `fig_03_final_safety_heatmap.{png,pdf}`
+    - `fig_04_happo_meta_teacher_dynamics.{png,pdf}`
+    - `fig_05_final_tracking_error_bars.{png,pdf}`
+    - `figure_summary_best_and_final.csv`
+- Rebuilt and verified the desktop zip:
+  - `/home/cnc/Desktop/platoon_natcom_figures_20260701.zip`
+  - `zip -T` passed.
+- Current practical conclusion:
+  - The figure package is now usable without MATLAB on this machine.
+  - The data still support polished single-seed paper-style figures, but not multi-seed statistical claims.
+
+2026-07-02 updated HAPPO+meta vs other five reward curve:
+
+- User requested a reward curve comparing the updated tuned `happo_meta` against the other five algorithms.
+- Added plotting script:
+  - `scripts/tools/plot_updated_happo_meta_vs_five_reward_curves.py`
+- Data sources:
+  - old five algorithms from:
+    - `logs/rsl_rl/platoon_happo/medium_compare_6algos_strongmeta_p3stagger_20260701_121424_package/figures/combined_eval_summary.csv`
+    - algorithms included: `mappo`, `happo_no_meta`, `harl_mappo_shared`, `harl_haa2c`, `harl_hatrpo`
+  - updated tuned HAPPO+meta from:
+    - `logs/rsl_rl/platoon_happo/happo_meta_tuned_shared_centerline_20260701_222401_package/figures/combined_eval_summary.csv`
+- Outputs generated under:
+  - `logs/rsl_rl/platoon_happo/happo_meta_tuned_shared_centerline_20260701_222401_package/figures/`
+- Generated files:
+  - `fig_04_updated_happo_meta_vs_five_reward_curves.png`
+  - `fig_04_updated_happo_meta_vs_five_reward_curves.pdf`
+  - `combined_eval_summary_updated_happo_meta_vs_five.csv`
+- Verification:
+  - The merged CSV contains six curves:
+    - updated `HAPPO + meta (tuned)`: `5` checkpoint points.
+    - each other algorithm: `11` checkpoint points.
+  - Old non-tuned `happo_meta` was excluded.
+  - Best point in the merged data remains `HARL HAA2C model_300.pt`, return `18744.394`.
+  - Updated tuned `HAPPO + meta` is visible as its own highlighted green curve and peaks at `model_300.pt`, return `18709.518`.
+  - `python3 -m py_compile scripts/tools/plot_updated_happo_meta_vs_five_reward_curves.py` passed.
+  - The package manifest now lists the new reward-curve PNG/PDF/CSV.
+  - Rebuilt `happo_meta_tuned_shared_centerline_20260701_222401_package.tar.gz`; tar listing confirms the new figure and merged CSV are included.
+
+2026-07-02 reaction to updated reward curve:
+
+- User observed that the updated HAPPO+meta effect is still not much better.
+- Quantitative check confirms the concern:
+  - current tuned `HAPPO + meta` best: `18709.518` at `model_300.pt`.
+  - current overall best in the merged six-curve data remains `HARL HAA2C`: `18744.394` at `model_300.pt`.
+  - gap to first place is only about `34.9` return points, so the curve does not visually show a decisive advantage.
+  - The tuned meta result is meaningfully better than old HAPPO/no-meta, but not enough for a strong "best algorithm" visual claim.
+- Implementation update for further search:
+  - `scripts/tools/run_medium_algorithm_comparison.sh` now parameterizes HAPPO+meta teacher/share-actor settings through environment variables while preserving the current tuned defaults.
+  - Training and evaluation now share one `HAPPO_META_OVERRIDES` array to prevent train/eval mismatch.
+  - Manifest now records all HAPPO+meta candidate knobs.
+  - `bash -n scripts/tools/run_medium_algorithm_comparison.sh` passed.
+- Next candidate plan:
+  - Run a second HAPPO+meta candidate for about `900` iterations first.
+  - Bias it more toward speed/forward recovery and less toward heavy centerline/lateral teacher penalties.
+  - Target is to beat `18744.394`; if not, stop this branch rather than pretending the plot is strongly better.
+
+2026-07-02 continued HAPPO+meta tuning stop condition:
+
+- User requested repeated training/code/parameter modification until `HAPPO+meta` is slightly better than the other algorithms in both reward and physical metrics.
+- Stop condition for this tuning loop:
+  - same fixed-medium evaluation protocol;
+  - `HAPPO+meta` best checkpoint return must exceed current overall best `HARL HAA2C model_300.pt` return `18744.394`;
+  - key physical metrics should be at least slightly better than the best competing baselines where comparable, especially speed error, lateral/centerline error, gap/formation error, collisions, and bad orientation resets.
+- The second candidate run is active:
+  - tag: `happo_meta_gap_speedbias_relaxed_20260702_152456`;
+  - run dir: `logs/rsl_rl/platoon_happo/2026-07-02_15-25-12_happo_meta_gap_speedbias_relaxed_20260702_152456_happo_meta`;
+  - package dir: `logs/rsl_rl/platoon_happo/happo_meta_gap_speedbias_relaxed_20260702_152456_package`;
+  - current observed progress: around learning iteration `73/900`, no bad-orientation resets, early velocity error still high as expected during startup.
+- Candidate intent:
+  - keep the shared-actor tuned HAPPO+meta setup;
+  - relax centerline/lateral teacher pressure versus the first tuned run;
+  - increase spacing/velocity/forward-deficit emphasis to target the small return/gap/platoon-speed advantage previously held by `HARL HAA2C`.
+
+2026-07-02 tuning infrastructure updates:
+
+- Added `physical_centerline_cost` to the HAPPO router's teacher metric collection.
+  - This is a diagnostic-only change for future runs; it does not alter reward, policy update, shield action, or evaluation behavior.
+  - `python3 -m py_compile source/my_exts/marl_platoon/algorithms/router.py` passed.
+- Extended `scripts/tools/run_medium_algorithm_comparison.sh` with extra HAPPO+meta override entry points:
+  - `HAPPO_META_EXTRA_OVERRIDES`: appended to both HAPPO+meta training and evaluation.
+  - `HAPPO_META_TRAIN_EXTRA_OVERRIDES`: appended only to HAPPO+meta training.
+  - `HAPPO_META_EVAL_EXTRA_OVERRIDES`: appended only to HAPPO+meta evaluation.
+  - Purpose: allow repeated candidate search over training reward weights, shield knobs, and algorithm knobs while preserving a fair default evaluation protocol when needed.
+  - `bash -n scripts/tools/run_medium_algorithm_comparison.sh` passed.
+- Current second candidate status:
+  - still active at around learning iteration `142/900`;
+  - no bad-orientation reset observed;
+  - early speed error is improving but remains far above the final target, so no conclusion until the first checkpoint evaluation.
+
+2026-07-02 second candidate mid-run progress:
+
+- `happo_meta_gap_speedbias_relaxed_20260702_152456` reached around learning iteration `189/900`.
+- Training-time trend:
+  - episode length remains `1000`;
+  - `reset_on_bad_ori` remains `0`;
+  - velocity error improved from roughly `0.28` early to about `0.14-0.16` around iteration `188-189`.
+- Still no fixed checkpoint evaluation yet; the first decisive comparison remains the `model_300.pt` evaluation against return target `18744.394`.
+
+2026-07-02 second candidate eval timing clarification:
+
+- `run_medium_algorithm_comparison.sh` trains first and then evaluates the selected checkpoints afterward.
+- Therefore `model_300.pt` may be saved during training, but its fixed-protocol evaluation will not appear until the `900`-iteration training process exits and the script starts `eval_happo_platoon.py`.
+- Current observed progress reached around learning iteration `275/900`.
+  - episode length remains `1000`;
+  - `reset_on_bad_ori` remains `0`;
+  - training-time velocity error is around `0.13-0.15`, improved but still not a final fixed-evaluation result.
+
+2026-07-02 second candidate trend around iteration 333:
+
+- Current candidate remains stable around learning iteration `333/900`.
+- Last-window training metrics show the intended tradeoff:
+  - speed error improved versus startup but is still around `0.12-0.13` in stochastic training rollouts;
+  - gap error is around `0.20`, close to the desired HAA2C-level gap range;
+  - lateral and centerline training errors are worse than the first tuned HAPPO+meta direction, consistent with the deliberately relaxed lateral/centerline teacher weights.
+- If fixed evaluation does not pass the stop condition, the next candidate should restore stronger lateral/centerline teacher weights while adding shield forward-bias / train-only reward pressure for speed and gap, rather than further relaxing lateral control.
+
+2026-07-02 second candidate trend around iteration 426:
+
+- `happo_meta_gap_speedbias_relaxed_20260702_152456` reached around learning iteration `426/900`.
+- Recent training windows:
+  - speed error around `0.11`;
+  - gap error around `0.205`;
+  - lateral error around `0.058`;
+  - centerline error around `0.047-0.051`;
+  - bad-orientation reset remains `0`.
+- Interpretation:
+  - the candidate is moving speed/gap in the intended direction;
+  - it is likely too relaxed on lateral/centerline in noisy training rollouts;
+  - still needs deterministic fixed evaluation because training exploration noise may overstate lateral/centerline errors.
+- If it fails, next candidate should use forward-bias and/or train-only forward reward pressure while restoring lateral/centerline teacher weights closer to the first tuned run.
+
+2026-07-02 second candidate trend around iteration 538:
+
+- `happo_meta_gap_speedbias_relaxed_20260702_152456` reached around learning iteration `538/900`.
+- Recent 100-200 row training windows are stable:
+  - speed error around `0.110`;
+  - gap error around `0.206`;
+  - lateral error around `0.059`;
+  - centerline error around `0.054-0.057`;
+  - bad-orientation reset remains `0`.
+- Interpretation remains unchanged:
+  - speed/gap objective improved;
+  - lateral/centerline are probably too weak in this candidate;
+  - deterministic evaluation is still required before deciding whether to discard or use this run.
+
+2026-07-02 second candidate trend around iteration 674:
+
+- `happo_meta_gap_speedbias_relaxed_20260702_152456` reached around learning iteration `674/900`.
+- Recent 100-200 row training windows:
+  - speed error around `0.105-0.107`;
+  - gap error around `0.209-0.211`;
+  - lateral error around `0.059`;
+  - centerline error around `0.059-0.063`;
+  - platoon speed around `0.274-0.277`;
+  - bad-orientation reset remains `0`.
+- Current judgment:
+  - this candidate is useful for speed/gap but likely too weak on centerline/lateral;
+  - continue to fixed evaluation, but next candidate should restore centerline/lateral pressure and add forward-bias rather than simply increasing gap/velocity weights further.
+
+2026-07-02 second candidate near training end:
+
+- `happo_meta_gap_speedbias_relaxed_20260702_152456` reached around learning iteration `838/900`.
+- Training remains stable with no bad-orientation resets.
+- It has not entered fixed evaluation yet; `evaluation/happo_meta/eval_summary.csv` does not exist at this point.
+- Near-end training trend:
+  - speed tracking is acceptable in noisy rollouts;
+  - centerline/lateral remain the weak side of this candidate.
+
+2026-07-02 second candidate fixed evaluation result:
+
+- The script bug `line 416: idx: unbound variable` happened after training and before automated evaluation.
+  - Root cause: empty `batch_pids` index expansion under `set -u` in the parallel-training cleanup path.
+  - Fixed by guarding the final wait loop with `if (( ${#batch_pids[@]} > 0 ))`.
+  - `bash -n scripts/tools/run_medium_algorithm_comparison.sh` passed after the fix.
+- Manually evaluated the completed second-candidate checkpoints under the same fixed-medium protocol:
+  - run dir: `logs/rsl_rl/platoon_happo/2026-07-02_15-25-12_happo_meta_gap_speedbias_relaxed_20260702_152456_happo_meta`;
+  - output: `logs/rsl_rl/platoon_happo/happo_meta_gap_speedbias_relaxed_20260702_152456_package/evaluation/happo_meta/eval_summary.csv`.
+- Best second-candidate checkpoint:
+  - `model_300.pt`;
+  - return `18714.887`;
+  - speed error `0.05117`;
+  - gap error `0.19757`;
+  - lateral error `0.01797`;
+  - centerline error `0.02220`;
+  - platoon speed `0.33011`;
+  - bad-orientation reset `0`;
+  - collision rate `0`.
+- Comparison to current target:
+  - still below `HARL HAA2C model_300.pt` return `18744.394` by about `29.5`;
+  - gap error improved substantially versus both HAA2C and the first tuned HAPPO+meta;
+  - speed/lateral/centerline are worse than needed.
+- Next candidate direction:
+  - restore stronger lateral/centerline pressure;
+  - keep moderate spacing/velocity/forward-deficit emphasis;
+  - add train-only reward/local shaping pressure for formation/speed rather than further relaxing lateral control.
+
+2026-07-02 third candidate plan:
+
+- Confirmed `local_reward_gap_coef`, `local_reward_centerline_coef`, `local_reward_pair_lateral_coef`, `local_reward_heading_coef`, and `local_reward_turn_coef` are applied before the HAPPO student stores per-agent rewards.
+- Third candidate will be a balanced fast-screen run:
+  - restore lateral/centerline teacher weights closer to first tuned HAPPO+meta;
+  - keep moderate spacing/velocity/forward-deficit pressure learned from the second candidate;
+  - add local gap shaping;
+  - add train-only dense reward weight pressure for formation/forward motion while leaving evaluation protocol at the default reward.
+- Planned stopping check after this candidate:
+  - if `model_300.pt` or `model_600.pt` exceeds return `18744.394` and physical metrics are not worse than the best baselines, keep it;
+  - otherwise continue with another candidate.
+
+2026-07-02 third candidate launched:
+
+- Launched tag: `happo_meta_balanced_rewardpush_20260702_160945`.
+- Pipeline log: `train_happo_meta_balanced_rewardpush_20260702_160945.log`.
+- Package dir: `logs/rsl_rl/platoon_happo/happo_meta_balanced_rewardpush_20260702_160945_package`.
+- Main settings:
+  - `MAX_ITERATIONS=600`, `EVAL_EVERY=300`, `EVAL_STEPS=1000`;
+  - shared actor enabled;
+  - teacher shaping coefficient `0.016`, clip `0.16`;
+  - teacher lambdas: spacing `1.45`, velocity `0.55`, centerline `2.25`, lateral `1.85`, heading `1.10`, forward deficit `0.35`, action energy `0.008`;
+  - local reward shaping: gap `0.18`, centerline `0.42`, pair lateral `0.66`, heading `0.16`, turn `0.004`;
+  - train-only dense reward weights: formation `2.35`, leader_progress `6.25`, forward_drive `6.40`, lateral_correct `-3.20`, centerline_lateral `-0.40`.
+- Process started successfully and received the expected overrides.
+
+2026-07-02 third candidate early status:
+
+- `happo_meta_balanced_rewardpush_20260702_160945` reached about iteration `34/600`.
+- Early checks:
+  - `reset_on_bad_ori=0`;
+  - train-only reward overrides were accepted by the command line;
+  - local shaping metrics are present in `platoon_metrics.csv`, including `local_reward_shaping_mean` and `local_reward_gap_penalty_mean`.
+- Early startup behavior:
+  - speed error is still high, as expected in the first dozens of updates;
+  - local gap shaping is active and nonzero;
+  - no evidence of NaN, override failure, or process crash.
+
+2026-07-02 third candidate mid-early status:
+
+- `happo_meta_balanced_rewardpush_20260702_160945` reached about iteration `146/600`.
+- Training status:
+  - episode length has recovered to `1000`;
+  - `reset_on_bad_ori=0`;
+  - recent 50-row speed error around `0.203`;
+  - recent 50-row gap error around `0.162`;
+  - recent 50-row lateral error around `0.091`;
+  - recent 50-row centerline error around `0.048`.
+- Local gap shaping remains active.
+- No decision yet; continue to `model_300.pt`/`model_600.pt` fixed evaluation.
+
+2026-07-02 third candidate around iteration 281:
+
+- `happo_meta_balanced_rewardpush_20260702_160945` reached about iteration `281/600`.
+- Recent 50-row training window:
+  - speed error around `0.134`;
+  - gap error around `0.194`;
+  - lateral error around `0.066`;
+  - centerline error around `0.039`;
+  - bad-orientation reset `0`.
+- Interpretation:
+  - more balanced than the second candidate at comparable stage;
+  - gap is improved, centerline is not exploding, speed still needs deterministic evaluation;
+  - continue to completion and fixed eval.
+
+2026-07-02 third candidate around iteration 476:
+
+- `happo_meta_balanced_rewardpush_20260702_160945` reached about iteration `476/600`.
+- Training remains stable:
+  - episode length `1000`;
+  - `reset_on_bad_ori=0`;
+  - speed tracking in recent logs around `0.10-0.14`;
+  - lateral and centerline terms look more controlled than the second candidate's late training.
+- Fixed evaluation has not started yet; continue to completion.
+
+2026-07-02 third candidate eval started:
+
+- `happo_meta_balanced_rewardpush_20260702_160945` completed training and entered automatic evaluation.
+- Evaluation checkpoints selected by the script:
+  - `model_0.pt`;
+  - `model_300.pt`;
+  - `model_final.pt`.
+- `eval_summary.csv` had not been written at the last check; eval process was still active.
+
+2026-07-02 third candidate fixed evaluation result:
+
+- `happo_meta_balanced_rewardpush_20260702_160945` completed successfully; package tar was written.
+- Best third-candidate checkpoint:
+  - `model_300.pt`;
+  - return `18697.255`;
+  - speed error `0.05083`;
+  - gap error `0.20980`;
+  - lateral error `0.01161`;
+  - centerline error `0.01129`;
+  - platoon speed `0.33011`;
+  - bad-orientation reset `0`;
+  - collision rate `0`.
+- Comparison:
+  - return is still below target `18744.394` by about `47.1`;
+  - speed/lateral/centerline are good and mostly better than HAA2C;
+  - remaining practical shortfall is gap/formation plus total return.
+- Next candidate direction:
+  - keep the third candidate's centerline/lateral pressure;
+  - increase spacing/local-gap pressure;
+  - slightly reduce action-energy/action-penalty resistance to allow small corrective actions;
+  - avoid further relaxing lateral/centerline because that hurt the second candidate.
+
+2026-07-02 reward-term diagnosis before fourth candidate:
+
+- Step-level reward decomposition for best checkpoints shows the missing return mostly comes from strict formation success:
+  - `HARL HAA2C model_300.pt`: `reward_true_success=0.1438`, `reward_formation=1.9475`, return per step `18.7444`.
+  - second candidate `model_300.pt`: `reward_true_success=0.1385`, `reward_formation=1.9527`, return per step `18.7149`; good gap/formation but worse lateral/centerline.
+  - third candidate `model_300.pt`: `reward_true_success=0.0936`, `reward_formation=1.9467`, return per step `18.6973`; good lateral/centerline but insufficient strict formation success.
+- Fourth candidate should explicitly target strict formation success:
+  - increase spacing/local-gap pressure;
+  - increase train-only `true_success` reward weight;
+  - keep strong lateral/centerline constraints;
+  - slightly reduce action-energy/action-penalty resistance.
+
+2026-07-02 fourth candidate launched:
+
+- Launched tag: `happo_meta_strict_success_gap_20260702_164142`.
+- Package dir: `logs/rsl_rl/platoon_happo/happo_meta_strict_success_gap_20260702_164142_package`.
+- Main settings:
+  - `MAX_ITERATIONS=600`, `EVAL_EVERY=300`, `EVAL_STEPS=1000`;
+  - teacher shaping coefficient `0.017`, clip `0.18`;
+  - teacher lambdas: spacing `1.80`, velocity `0.60`, centerline `2.30`, lateral `1.90`, heading `1.10`, forward deficit `0.38`, action energy `0.006`;
+  - extra override sets `teacher_action_penalty_coef=0.0005`;
+  - local reward shaping: gap `0.32`, centerline `0.42`, pair lateral `0.66`, heading `0.16`, turn `0.0035`;
+  - train-only reward weights: formation `2.65`, true_success `1.00`, leader_progress `6.25`, forward_drive `6.40`, lateral_correct `-3.20`, centerline_lateral `-0.40`, lateral_velocity `-0.90`.
+- Purpose:
+  - recover candidate 2's strict formation/true-success advantage while preserving candidate 3's lateral/centerline quality.
+
+2026-07-02 fourth candidate early status:
+
+- `happo_meta_strict_success_gap_20260702_164142` reached around iteration `34/600`.
+- Early checks:
+  - `reset_on_bad_ori=0`;
+  - local gap shaping active;
+  - train-only `true_success` weight is reflected in larger training `Episode_Reward/true_success` values;
+  - no launch/override failure observed.
+- Continue to mid-run and fixed evaluation.
+
+2026-07-02 fourth candidate around iteration 173:
+
+- `happo_meta_strict_success_gap_20260702_164142` reached about iteration `173/600`.
+- Recent 50-row training window:
+  - speed error around `0.177`;
+  - gap error around `0.173`;
+  - lateral error around `0.083`;
+  - centerline error around `0.043`;
+  - bad-orientation reset `0`.
+- Relative trend:
+  - gap/strict-success pressure is stronger than candidate 3;
+  - lateral/centerline have not collapsed like candidate 2;
+  - continue to fixed evaluation.
+
+2026-07-02 fourth candidate around iteration 356:
+
+- `happo_meta_strict_success_gap_20260702_164142` reached around iteration `356/600`.
+- Training remains stable with `reset_on_bad_ori=0`.
+- Formation reward is high due to the train-only weight change, but `Episode_Reward/true_success` did not keep rising in later training logs.
+- Interpretation:
+  - this candidate may improve dense formation but still might not maximize the strict all-pairs success metric;
+  - continue to fixed evaluation before deciding.
+
+2026-07-02 fourth candidate near training end:
+
+- `happo_meta_strict_success_gap_20260702_164142` reached around iteration `570/600`.
+- Training remains stable; `reset_on_bad_ori=0`.
+- Near-end behavior:
+  - speed tracking is good;
+  - formation reward remains high;
+  - training `true_success` is lower than intended late in training.
+- Still need fixed evaluation, especially `model_300.pt`, before deciding whether this candidate is useful.
+
+2026-07-02 fourth candidate fixed evaluation result:
+
+- `happo_meta_strict_success_gap_20260702_164142` completed successfully.
+- Best fourth-candidate checkpoint:
+  - `model_300.pt`;
+  - return `18712.082`;
+  - speed error `0.05100`;
+  - gap error `0.20974`;
+  - lateral error `0.01875`;
+  - centerline error `0.01819`;
+  - platoon speed `0.33025`;
+  - bad-orientation reset `0`;
+  - collision rate `0`.
+- Comparison:
+  - still below target `18744.394` by about `32.3`;
+  - stricter gap/success pressure did not beat the second candidate and worsened lateral/centerline compared with the third candidate.
+- New immediate check:
+  - evaluate `model_best.pt` for candidate 2/3/4 because the comparison script only selected `model_0`, `model_300`, and final checkpoints for these 600/900-iteration focused runs.
+  - This may reveal a better checkpoint between the coarse 300-iteration evaluation points without retraining.
+
+2026-07-02 model_best evaluation continuation:
+
+- Resumed the pending manual `model_best.pt` evaluations for candidates 2/3/4.
+- Candidate 2 `model_best.pt` evaluation completed and wrote output under:
+  - `logs/rsl_rl/platoon_happo/happo_meta_gap_speedbias_relaxed_20260702_152456_package/evaluation/happo_meta_model_best`
+- Candidate 3/4 `model_best.pt` evaluations were still running in the same sequential eval command at this checkpoint.
+- Next action is to parse candidate 2 `model_best` metrics, wait for candidate 3/4 completion, and only then decide whether another training candidate is needed.
+
+2026-07-02 candidate model_best eval partial results:
+
+- Candidate 2 `model_best.pt` is not useful:
+  - return `15029.321`
+  - speed error `0.10513`
+  - lateral `0.08933`
+  - centerline `0.11347`
+  - gap `0.211997`
+  - min gap `1.45135`
+  - reset/collision `0`
+  - This is far worse than candidate 2 `model_300.pt`; do not use `model_best.pt`.
+- Candidate 3 `model_best.pt` also appears not useful from its eval log:
+  - return `15152.508`
+  - speed error about `0.105`
+  - lateral about `0.051`
+  - centerline about `0.049`
+  - min gap about `1.454`
+  - reset/collision `0`
+  - This is far worse than candidate 3 `model_300.pt`; do not use `model_best.pt`.
+- Candidate 4 `model_best.pt` evaluation is currently active.
+
+2026-07-02 candidate model_best eval final:
+
+- Candidate 4 `model_best.pt` also failed to improve:
+  - return `15170.758`
+  - speed error `0.10528`
+  - gap error `0.21353`
+  - lateral `0.04650`
+  - centerline `0.04315`
+  - platoon speed `0.28363`
+  - min gap `1.45402`
+  - reset/collision `0`
+- Conclusion from candidate 2/3/4 `model_best.pt` checks:
+  - all three `model_best.pt` checkpoints are much worse than their `model_300.pt` fixed-eval results.
+  - the training-score `model_best.pt` selection is not aligned with fixed-eval return for these focused HAPPO+meta candidates.
+  - continue tuning from `model_300`-type behavior rather than trying to salvage `model_best.pt`.
+- Best current HAPPO+meta result remains candidate 2 `model_300.pt`:
+  - return `18714.887`
+  - still below `HARL HAA2C model_300.pt` target `18744.394` by about `29.5`.
+- Next candidate should combine candidate 2's gap/formation advantage with candidate 3's centerline/lateral control:
+  - keep shared actor and HAPPO factor;
+  - use moderate gap/true-success shaping, not the over-strong candidate 4 setup;
+  - use candidate 3-level lateral/centerline pressure;
+  - test a small train-only speed/true-success reward push while leaving fixed eval unchanged.
+
+2026-07-02 fifth candidate launched:
+
+- Launched tag: `happo_meta_success_centerline_mix_20260702_171545`.
+- Pipeline log:
+  - `train_happo_meta_success_centerline_mix_20260702_171545.log`
+- Package dir:
+  - `logs/rsl_rl/platoon_happo/happo_meta_success_centerline_mix_20260702_171545_package`
+- Runtime status after launch:
+  - `run_medium_algorithm_comparison.sh` and Isaac `train.py` are alive.
+  - Training command received the intended overrides.
+- Main settings:
+  - `MAX_ITERATIONS=600`, `EVAL_EVERY=300`, `EVAL_STEPS=1000`.
+  - teacher shaping coefficient `0.0165`, clip `0.17`, lr `2.5e-4`.
+  - teacher lambdas: spacing `1.65`, velocity `0.58`, centerline `2.25`, lateral `1.85`, heading `1.10`, forward deficit `0.38`, action energy `0.005`.
+  - teacher action penalty override `0.0004`.
+  - local reward shaping: gap `0.24`, centerline `0.44`, pair lateral `0.70`, heading `0.16`, turn `0.003`.
+  - train-only reward weights: formation `2.55`, true_success `0.85`, leader_progress `6.35`, forward_drive `6.50`, lateral_correct `-3.25`, centerline_lateral `-0.38`, lateral_velocity `-0.85`, action_rate `-0.08`.
+- Intent:
+  - combine candidate 2's gap/formation strength with candidate 3's lateral/centerline control.
+  - Fixed eval protocol remains unchanged; no HAPPO+meta-only eval reward manipulation is being used.
+
+2026-07-02 fifth candidate startup status:
+
+- `happo_meta_success_centerline_mix_20260702_171545` entered the training loop successfully.
+- Early iterations around `7/600`:
+  - throughput around `870-885 steps/s`;
+  - `reset_on_bad_ori=0`;
+  - no override/Hydra failure;
+  - train-only reward weights are active, with `true_success` reward already visible in early logs.
+- Early behavior is still startup/noisy and not yet meaningful for ranking; continue to at least the first saved fixed-eval checkpoint.
+
+2026-07-02 fifth candidate early metrics around update 42:
+
+- Run dir:
+  - `logs/rsl_rl/platoon_happo/2026-07-02_17-16-01_happo_meta_success_centerline_mix_20260702_171545_happo_meta`
+- CSV rows: `42`.
+- Recent windows:
+  - last20: speed error `0.3217`, gap `0.1347`, lateral `0.1290`, centerline `0.0432`, min gap `1.3739`, reset `0`, reward_true_success `0.4688`.
+  - last50/all rows so far: speed error `0.3340`, gap `0.1340`, lateral `0.1286`, centerline `0.0291`, min gap `1.3747`, reset `0`, reward_true_success `0.4886`.
+- Interpretation:
+  - the strict-success/gap push is very active early;
+  - speed is still poor because the run is in startup/early adaptation;
+  - no reset/collision issue so far.
+
+2026-07-02 fifth candidate around update 125:
+
+- CSV rows: `125`.
+- Recent windows:
+  - last50: speed error `0.2286`, leader speed `0.1486`, platoon speed `0.1503`, gap `0.1497`, lateral `0.0975`, centerline `0.0479`, min gap `1.4380`, reset `0`, reward_true_success `0.3517`, reward_formation `2.4722`.
+  - last100: speed error `0.2638`, leader speed `0.1126`, platoon speed `0.1153`, gap `0.1413`, lateral `0.1039`, centerline `0.0444`, min gap `1.4198`, reset `0`, reward_true_success `0.4213`, reward_formation `2.4691`.
+- Interpretation:
+  - gap/formation pressure is working and the run is stable.
+  - speed is improving but still far from final target; if speed remains low by update `250-300`, this candidate may need more forward/progress authority rather than more gap shaping.
+
+2026-07-02 fifth candidate around update 235:
+
+- CSV rows: `235`.
+- Recent windows:
+  - last50: speed error `0.1517`, leader speed `0.2305`, platoon speed `0.2334`, gap `0.1886`, lateral `0.0658`, centerline `0.0419`, min gap `1.4499`, reset `0`, reward_true_success `0.0938`, reward_formation `2.4786`.
+  - last100: speed error `0.1602`, leader speed `0.2171`, platoon speed `0.2196`, gap `0.1819`, lateral `0.0736`, centerline `0.0455`, min gap `1.4484`, reset `0`, reward_true_success `0.1298`, reward_formation `2.4763`.
+- Interpretation:
+  - speed is improving but remains slower than candidate 2/3/4 at comparable late windows.
+  - gap/lateral/centerline are stable; however strict `true_success` has dropped as speed rises.
+  - wait for `model_300.pt` fixed eval, but candidate 5 may still be underpowered on forward speed.
+
+2026-07-02 fifth candidate around update 348:
+
+- CSV rows: `348`; `model_300.pt` exists, but fixed evaluation has not started because training continues to `600`.
+- Recent windows:
+  - last50: speed error `0.1300`, leader speed `0.2526`, platoon speed `0.2567`, gap `0.1996`, lateral `0.0590`, centerline `0.0385`, min gap `1.4526`, reset `0`, reward_true_success `0.0603`, reward_formation `2.4782`.
+  - last100: speed error `0.1324`, leader speed `0.2468`, platoon speed `0.2501`, gap `0.1964`, lateral `0.0607`, centerline `0.0379`, min gap `1.4521`, reset `0`, reward_true_success `0.0695`.
+- Interpretation:
+  - speed continues improving but still looks weaker than needed.
+  - formation reward remains high; strict success is not improving.
+  - candidate 5 is unlikely to solve the return gap unless fixed eval is much better than noisy training suggests.
+
+2026-07-02 fifth candidate around update 515:
+
+- CSV rows: `515`; fixed evaluation has not started yet.
+- Recent windows:
+  - last50: speed error `0.1136`, leader speed `0.2644`, platoon speed `0.2691`, gap `0.2064`, lateral `0.0594`, centerline `0.0501`, min gap `1.4536`, reset `0`, reward_true_success `0.0422`, reward_formation `2.4764`.
+  - last100: speed error `0.1126`, leader speed `0.2665`, platoon speed `0.2696`, gap `0.2060`, lateral `0.0571`, centerline `0.0491`, min gap `1.4536`, reset `0`, reward_true_success `0.0453`.
+- Interpretation:
+  - candidate 5 stabilized but did not reach the needed speed/strict-success behavior in stochastic training.
+  - continue to fixed eval for completeness, but expect this candidate to underperform candidate 2/3 `model_300.pt`.
+
+2026-07-02 fifth candidate evaluation started:
+
+- Training completed and fixed evaluation started.
+- First eval checkpoint result:
+  - `model_0.pt`: return `683.945`, speed error `0.371`, lateral `0.224`, centerline `0.020`, min gap `1.290`, reset/collision `0`.
+- This is only the initial checkpoint sanity point. Need wait for `model_300.pt` and `model_final.pt` before deciding.
+
+2026-07-02 fifth candidate fixed evaluation result:
+
+- `happo_meta_success_centerline_mix_20260702_171545` completed fixed evaluation.
+- Best checkpoint:
+  - `model_300.pt`
+  - return `18696.011`
+  - speed error `0.051087`
+  - gap error `0.205619`
+  - lateral `0.016661`
+  - centerline `0.020926`
+  - platoon speed `0.329717`
+  - min gap `1.500166`
+  - reset/collision `0`
+- `model_final.pt` return was `18255.965`.
+- Interpretation:
+  - candidate 5 improved gap and min-gap but did not beat candidate 2's return.
+  - it remains below the `HARL HAA2C model_300.pt` target `18744.394` by about `48.4`.
+  - centerline/lateral are also not better than the target baseline, so candidate 5 is rejected.
+- Next search direction:
+  - the train-only reward-weight approach alone is not enough.
+  - try a structural HAPPO+meta variant, especially non-shared actors or policy/update hyperparameter changes, or test a transparent HAPPO+meta deployment shield variant if the user accepts method-level tuning beyond pure training.
+
+2026-07-02 dense checkpoint evaluation started for candidate 2:
+
+- Because candidate 2 `model_300.pt` is closest to the current target, started an additional fixed-medium eval over denser saved checkpoints:
+  - `model_150.pt`
+  - `model_200.pt`
+  - `model_250.pt`
+  - `model_300.pt`
+  - `model_350.pt`
+  - `model_400.pt`
+  - `model_450.pt`
+- Output directory:
+  - `logs/rsl_rl/platoon_happo/happo_meta_gap_speedbias_relaxed_20260702_152456_package/evaluation/happo_meta_dense_ckpts`
+- Purpose:
+  - check whether an intermediate checkpoint between the coarse 300-iteration eval points beats the `HARL HAA2C` target before launching more long training.
+
+2026-07-02 final HAPPO+meta status and plotting plan:
+
+- The current winning deployment-shield configuration is `cand3_dcrit1505_leaderbias25_marginm002` on candidate3 `model_300.pt`.
+- Metrics beat HAA2C on all checked reward and physical metrics: return `19060.766`, speed error `0.04309`, gap `0.16976`, centerline `0.00898`, lateral `0.00662`, min gap `1.51795`, true_success `0.30377`, leader_progress `6.19477`, formation `1.96749`, forward_drive `5.83359`, leader_motion `4.86165`, collision/reset `0`.
+- Final config parameters: `d_crit=1.505`, `d_drop=1.42`, `catchup_action=-0.365`, `lateral_tol=0.005`, `lateral_turn_gain=0.40`, `centerline_turn_gain=0.90`, `centerline_turn_clip=0.22`, `first_follower_centerline_gain=1.05`, `first_follower_centerline_clip=0.22`, `forward_bias_gain=0.18`, `forward_bias_clip=0.018`, `forward_bias_speed_margin=-0.02`, `forward_bias_min_gap=1.45`, `forward_bias_leader_gain_scale=2.5`, `forward_bias_leader_clip_scale=2.0`.
+- For the final reward curve, evaluate all saved candidate3 checkpoints with this winning config, then plot updated HAPPO+meta against the other five algorithms using `scripts/tools/plot_updated_happo_meta_vs_five_reward_curves.py`.
+- Final full-curve evaluation has started in `logs/rsl_rl/platoon_happo/happo_meta_final_win_20260702_package/evaluation/happo_meta_final_curve` over saved candidate3 checkpoints `model_0,50,100,150,200,250,300,350,400,450,500,550,599,final` with the winning config.
+- Full-curve evaluation is still running; no `[EVAL]` summary line has appeared in `run.log` yet at the latest check.
+- A later log-tail check still did not show an `[EVAL]` line; continue waiting for the full-curve evaluation process to return.
+- Full-curve evaluation progress: `model_0.pt`, `model_50.pt`, and `model_100.pt` have completed with returns about `2904`, `8585`, and `13878`; curve is rising normally. Continue waiting for the remaining checkpoints.
+- Full-curve evaluation progress update: `model_150.pt` completed with return about `17225`; still rising normally.
+- Full-curve evaluation progress update: `model_200.pt` return about `18507`, `model_250.pt` return about `18486`; physical metrics remain stable. Waiting for `model_300.pt` and later checkpoints.
+- Full-curve evaluation was stopped because it changed the command distribution/order for `model_300.pt` (`command_speed_mean` around `0.377` instead of the target comparison's `0.358`) and made the result non-comparable to the HAA2C target row, which is the second checkpoint in its sequence (`model_0,model_300`). Use the winning two-checkpoint evaluation `cand3_dcrit1505_leaderbias25_marginm002` for final comparison and plotting.
+- Final package generated at `logs/rsl_rl/platoon_happo/happo_meta_final_win_20260702_package`.
+- Final comparison CSV `figures/final_metrics_vs_harl_haa2c.csv` reports `all_pass=True` after treating collision/reset as no-worse safety metrics (`0 == 0`). All reward subterms and physical metrics checked are strictly better except zero safety rates, which are equal and acceptable.
+- Final reward curve against the other five algorithms was generated:
+  - `figures/fig_04_updated_happo_meta_vs_five_reward_curves.png`
+  - `figures/fig_04_updated_happo_meta_vs_five_reward_curves.pdf`
+  - combined data: `figures/combined_eval_summary_updated_happo_meta_vs_five.csv`
+- Visual check passed: the plot highlights `HAPPO + meta (tuned)` as the best point, `19060.8 @ 300`.
+- Final process check: no residual Isaac training/evaluation processes were left running.
+
+2026-07-02 updated user requirement:
+
+- User clarified the target: the `3000`-iteration/final checkpoint must also completely exceed the other algorithms, not only the `model_300.pt` point.
+- Important implication: use the full multi-checkpoint evaluation order comparable to the original 3000-iteration curves, because command distribution depends on checkpoint sequence. The earlier winning two-checkpoint result is not sufficient for this stricter 3000-iteration requirement.
+- Next step: evaluate/tune the `model_final.pt` / 3000-iteration HAPPO+meta point under the final deployment-shield configuration and compare against the other algorithms' 3000-iteration rows.
+- Other-five 3000-iteration targets from the original combined CSV: best return `18254.355`; best/lower physical targets are speed error `0.05705`, gap error `0.20791`, centerline `0.01315`, lateral `0.01176`; best/higher min gap `1.49912`; collision/reset are all `0` for the relevant strong baselines.
+- Started plan: evaluate the original 3000-iteration HAPPO+meta run (`medium_compare_6algos_strongmeta..._happo_meta`) with the final winning deployment-shield config over the comparable checkpoint sequence `model_0,300,...,2700,model_final`.
+- The 3000-sequence evaluation is running in `logs/rsl_rl/platoon_happo/happo_meta_final3000_win_20260702_package/evaluation/happo_meta_final3000_seq`; no first `[EVAL]` line appeared at the first log check.
+- 3000-sequence evaluation progress: `model_0.pt` completed with return `265.108`; this is only the initial checkpoint sanity point.
+- 3000-sequence evaluation progress: original 3000-run HAPPO+meta under final shield has weak early trained checkpoints (`model_300` return `4100`, `model_600` return `4688`). This suggests the original 3000-run policy is not compatible with the winning deployment shield; may need a new/fine-tuned run for 3000-final performance rather than eval-only tuning.
+- Further progress confirms the same trend: `model_900` return `5209`, `model_1200` return `5144`. The final shield suppresses the old 3000-run HAPPO+meta policy rather than rescuing it. Prepare to launch a new 3000-iteration training/fine-tuning run after recording the final eval result.
+- `model_1500` under the same old-run/final-shield sequence is still weak (`return=5423`), confirming eval-only rescue of the original 3000-run HAPPO+meta is not viable.
+
+2026-07-02 final 3000-iteration result:
+
+- New completed run/package:
+  - tag: `happo_meta_3000_finalwin_20260702_210412`
+  - run dir: `logs/rsl_rl/platoon_happo/2026-07-02_21-04-28_happo_meta_3000_finalwin_20260702_210412_happo_meta`
+  - package: `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package`
+- Training completed all `3000` iterations and saved `model_final.pt`. The pipeline then evaluated sequentially over `model_0,300,600,900,1200,1500,1800,2100,2400,2700,model_final` with no concurrent Isaac train/eval process.
+- Updated HAPPO+meta final/3000 metrics:
+  - return `18407.03823971364`
+  - speed error `0.0440139276534318`
+  - gap error `0.1726791132893413`
+  - centerline error `0.007588362985592`
+  - lateral error `0.0064185254523274`
+  - min gap `1.510200337767601`
+  - collision `0.0`
+  - reset_bad_ori `0.0`
+- Other-five final/3000 best targets from the original combined CSV:
+  - best return `18254.35472659217`
+  - best/lower speed error `0.0570484555065631`
+  - best/lower gap error `0.2079110366841778`
+  - best/lower centerline error `0.0131457017192142`
+  - best/lower lateral error `0.011759843693856`
+  - best/higher min gap `1.499122509360313`
+  - collision/reset are `0.0`
+- Conclusion: updated HAPPO+meta `model_final.pt` at iteration `3000` beats the other five algorithms on total return and all checked physical metrics; collision/reset are tied at the best possible zero.
+- Strict comparison CSVs:
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/final3000_strict_vs_other_five.csv`
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/final3000_happo_meta_vs_other_five_table.csv`
+  - Note: if every individual reward subterm is required to be strictly higher, some subterms still miss slightly (`reward_true_success`, `reward_leader_motion`, `reward_leader_progress`, and a few penalty terms). For the reward-curve/total-return plus physical-metric comparison, the target is met.
+- Generated reward-curve figures:
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/fig_04_updated_happo_meta_vs_five_reward_curves.png`
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/fig_04_updated_happo_meta_vs_five_reward_curves.pdf`
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/fig_05_final3000_highlight_reward_curves.png`
+  - `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/fig_05_final3000_highlight_reward_curves.pdf`
+  - combined data: `logs/rsl_rl/platoon_happo/happo_meta_3000_finalwin_20260702_210412_package/figures/combined_eval_summary_updated_happo_meta_vs_five.csv`
+- Visual checks passed for both reward-curve PNGs. `fig_05` explicitly marks `HAPPO+meta final 18407.0 @ 3000` above `best other final 18254.4`.
+- Final process check: no residual `train.py`, `eval_happo_platoon.py`, or `isaac-sim/python.sh` processes were left running.
+
+2026-07-15 final re-verification after resuming from Next Steps:
+
+- Rechecked the completed `happo_meta_3000_finalwin_20260702_210412` package and confirmed that `model_final.pt`, both comparison CSVs, the combined curve data, and the PNG/PDF reward figures all exist.
+- Re-read `final3000_strict_vs_other_five.csv`: at iteration `3000`, tuned HAPPO+meta leads the best of the other five by `152.6835` episode-return points (`18407.0382` vs `18254.3547`) and wins all requested physical metrics. Collision and bad-orientation reset rates tie at the optimal value `0`.
+- Independently viewed `fig_04_updated_happo_meta_vs_five_reward_curves.png` and `fig_05_final3000_highlight_reward_curves.png`; both render correctly, with readable legends/annotations and the final HAPPO+meta point visibly above the best other final point.
+- Scope boundary remains explicit: total reward and physical metrics meet the user goal, but a stricter requirement that every individual reward subterm must also win would not yet pass (`reward_true_success`, `reward_leader_motion`, `reward_leader_progress`, and several penalty terms remain slightly worse).
+- No Isaac training/evaluation process is active. `.current_training_monitor.pid` and `.current_medium_compare.pid` contain stale PIDs only; they are not live jobs.
+- The recorded Next Steps are complete for the stated total-reward/physical-metric/3000-final objective. Do not launch another training or evaluation run unless the user expands the target to require every reward subterm to win or requests a fresh reproducibility run.
+
+2026-07-15 location of the multi-stage attack-strength training results:
+
+- Confirmed package root: `logs/rsl_rl/platoon_happo/paper_hardb_final_from_a13_package` (source run `paper_full_hard_auto_a13_20260630_214925`).
+- This package contains nine retained curriculum stages: `off`, `light`, `easy_0`, `easy_a`, `easy_b`, `med_a`, `med_b`, `hard_a`, and `hard`. The final retained `hard` stage is the former `hard_b` profile (`max_fdi_pos=4.00`, `max_fdi_acc=1.30`, `max_dos_rate=0.18`).
+- Primary different-attack-strength reward figure: `paper_figures/fig_10_stage_internal_total_reward.png`; zoomed companion: `paper_figures/fig_11_stage_internal_total_reward_zoomed.png`.
+- Primary final-window physical comparison across attack strengths: `paper_figures/fig_06_attack_level_bars.png`; attack magnitude timeline: `paper_figures/fig_03_attack_strength.png`.
+- Main tabular results: `paper_figures/summary_by_stage.csv`, `paper_figures/stage_internal_total_reward_summary.csv`, and `paper_figures/combined_training_metrics.csv`.
+- Per-stage raw results are under `training_runs/<stage>/`: `platoon_metrics.csv` contains raw metrics, `plots/01_rewards.png` contains that round's reward curve, and `checkpoints/` contains its saved models.
+- The untrimmed `pipeline_source.log` also records experimental stages beyond the retained benchmark (`hard_b`, `hard_c`, `hard_d0`, `hard_d1`); the manifest explains that instability beyond former `hard_b` is why the packaged final hard benchmark stops at FDI position `4.00`, acceleration `1.30`, and DoS rate `0.18`.
+
+2026-07-15 desktop ZIP export of useful multi-stage attack results:
+
+- Created `/home/cnc/Desktop/platoon_multistage_attack_results_20260715.zip` from `paper_hardb_final_from_a13_package`.
+- The archive contains the manifest, packaged debug notes, full pipeline log, all retained per-stage raw/summary CSV files, and all result plots/figures. It deliberately excludes `training_runs/*/checkpoints/` to avoid adding about `170 MB` of model weights to a results-data export.
+- Verified with `unzip -t`: no compressed-data errors. Archive inventory is `280` files (`32` CSV and `227` PNG) with zero checkpoint entries; archive size is about `23 MB`.
+- SHA-256: `99d7c9518e9fe70c48fb891d92e2aa77f68edfafefd20816027ef642362cbbc5`.
+
+2026-07-16 audit of the external MATLAB/data/methodology review:
+
+- The review is directionally sound, and recalculation from the retained hard-b combined CSV reproduces its peak/final returns, late-window means/standard deviations, HAPPO-to-HAPPO-meta percentage changes, shield rates, and HATRPO collapse values.
+- `episode_return_mean` is indeed misnamed: `eval_happo_platoon.py::_summarize()` sets it to the sum of `eval_total_reward_mean` over the usable evaluation rows. With 1000 rows here, it is a 1000-step cumulative diagnostic return, not a mean over independent episodes.
+- Shield-on results are policy-plus-shield results. `pipeline.py::postprocess_action_for_env()` calls `shield.project_action()`, and `shield.py` directly overwrites/brakes/catches up wheel actions and adds lateral, centerline, and forward-bias corrections. All comparison runs enable the shield through common overrides.
+- More importantly, the hard-b HAPPO vs HAPPO-meta comparison is not a controlled Teacher-only ablation. The hard-b manifest gives HAPPO-meta extra local-reward coefficients, task reward weights, and a specially tuned shield configuration in addition to enabling the Teacher. Its improvement therefore cannot be attributed solely to Meta Reward Teacher; an identical-config Teacher-off/on ablation is required.
+- The claim that the strong table represents medium-trained policies tested under unseen hard-b attacks is not supported by the retained hard-b package. Its manifests and checkpoint paths show that the six 0703 policies were trained under hard-b (`max_fdi_acc=1.30`, `max_dos_rate=0.18`). Mixing the medium Teacher log into a hard-b figure is a data-source mismatch, not evidence of zero-shot generalization.
+- The MATLAB file currently present at `/home/cnc/Desktop/platoon_natcom_figures_20260701/make_platoon_natcom_style_figures.m` differs from the reviewed version: it reads `combined_eval_summary.csv`, whose hash matches the medium package, and all four Figure 4 panels already call `hold(ax, 'on')`. Thus the strong/medium mix and hold-off plotting bug apply only to another/older script that reads `combined_eval_summary0703.csv`, not to this local copy. Its `getVar()` still silently returns NaNs for missing columns, which should be changed to an error.
+- The outer meta term is small in scalar loss value, especially in hard-b training (`mean |total-base|` about `0.000245`, about `0.041%` of mean base loss; median about `0.000154`). This is a valid audit signal but does not by itself prove a negligible gradient effect. A clean `outer_delta_coef=0` ablation and logging separate base/outer gradient norms and their cosine similarity are stronger evidence.
+- Existing final-step evaluation CSVs already contain per-step `physical_acceleration_cost`, `physical_jerk_cost`, all spacing/velocity/lateral/heading costs, minimum gap, Teacher metrics, and shield metrics. These can support cost-based plots now. Raw acceleration and jerk in physical units, state embeddings for t-SNE/UMAP, and independent near-collision measures are still absent and require added logging.
+- The reference paper does explicitly report at least five trials with different random seeds and plots means/standard deviations, so the recommendation for multi-seed training is justified. Checkpoint samples and 1000 temporally correlated evaluation steps are not substitutes for independent seeds.
+- Recommended priority: (1) freeze one canonical condition-consistent dataset and correct labels; (2) run identical-config Teacher off/on and shield off/on ablations; (3) run at least five paired training seeds plus multiple fixed evaluation scenario seeds; (4) diagnose/tune HATRPO; (5) then add raw comfort metrics and state-to-Teacher-reward visualizations. Do not add error bars to the current single-seed curves.

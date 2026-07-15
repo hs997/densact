@@ -27,6 +27,7 @@ class BadHeadingShieldCfg:
     lateral_velocity_gain: float = 0.10
     centerline_turn_gain: float = 0.25
     centerline_turn_clip: float = 0.08
+    centerline_turn_sign: float = 1.0
     first_follower_lateral_gain_scale: float = 1.0
     first_follower_lateral_clip_scale: float = 1.0
     first_follower_lateral_clip_max: float = 0.18
@@ -46,6 +47,8 @@ class BadHeadingShieldCfg:
     forward_bias_speed_margin: float = 0.02
     forward_bias_min_command: float = 0.0
     forward_bias_min_gap: float = 0.75
+    forward_bias_leader_gain_scale: float = 1.0
+    forward_bias_leader_clip_scale: float = 1.0
 
 
 class BadHeadingShieldModule(ShieldModule):
@@ -211,7 +214,11 @@ class BadHeadingShieldModule(ShieldModule):
                 centerline_y = self._env_local_y(self.robots[agent_id])
                 brake_mask = self._brake_mask_for_agent(agent_id)
                 centerline_mask = (torch.abs(centerline_y) > self.cfg.lateral_tol) & (~brake_mask)
-                centerline_turn = torch.clamp(gain * centerline_y, min=-clip, max=clip)
+                centerline_turn = torch.clamp(
+                    float(self.cfg.centerline_turn_sign) * gain * centerline_y,
+                    min=-clip,
+                    max=clip,
+                )
                 centerline_turn = torch.where(centerline_mask, centerline_turn, torch.zeros_like(centerline_turn))
 
                 if centerline_mask.any():
@@ -245,11 +252,16 @@ class BadHeadingShieldModule(ShieldModule):
                     device=self.env.device,
                     dtype=guarded.dtype,
                 )
+                gain = float(self.cfg.forward_bias_gain)
+                clip = float(self.cfg.forward_bias_clip)
+                if agent_id == 0:
+                    gain *= float(self.cfg.forward_bias_leader_gain_scale)
+                    clip *= float(self.cfg.forward_bias_leader_clip_scale)
                 speed_deficit = command_x - speed - float(self.cfg.forward_bias_speed_margin)
                 bias = torch.clamp(
-                    float(self.cfg.forward_bias_gain) * speed_deficit,
+                    gain * speed_deficit,
                     min=0.0,
-                    max=float(self.cfg.forward_bias_clip),
+                    max=clip,
                 )
                 bias_mask = command_mask & (bias > 0.0)
                 if agent_id > 0 and self.cfg.forward_bias_min_gap > 0.0:

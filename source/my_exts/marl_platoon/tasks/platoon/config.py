@@ -634,6 +634,29 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
         local_reward_last_follower_pair_lateral_scale: float = 1.0
         local_reward_last_follower_gap_scale: float = 1.0
         local_reward_last_follower_turn_scale: float = 1.0
+        teacher_shaping_coef: float = 0.02
+        teacher_lr: float = 3.0e-4
+        teacher_update_interval: int = 1
+        teacher_every_student_updates: int = 2
+        teacher_shaping_clip: float = 0.20
+        teacher_action_penalty_coef: float = 0.001
+        teacher_reward_ema_tau: float = 0.95
+        teacher_consistency_coef: float = 0.03
+        teacher_outer_delta_coef: float = 0.08
+        teacher_outer_delta_warmup_updates: int = 5
+        teacher_outer_delta_ramp_updates: int = 20
+        teacher_lambda_spacing: float = 1.0
+        teacher_lambda_velocity: float = 0.5
+        teacher_lambda_acceleration: float = 0.25
+        teacher_lambda_jerk: float = 0.10
+        teacher_lambda_overspeed: float = 0.25
+        teacher_lambda_centerline: float = 1.0
+        teacher_lambda_lateral: float = 0.5
+        teacher_lambda_heading: float = 2.0
+        teacher_lambda_backward: float = 1.0
+        teacher_lambda_forward_deficit: float = 0.5
+        teacher_lambda_collision: float = 10.0
+        teacher_lambda_action_energy: float = 0.02
         max_fdi_pos: float = -1.0
         max_fdi_acc: float = -1.0
         max_dos_rate: float = -1.0
@@ -949,6 +972,7 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
         lateral_velocity_gain: float = 0.10
         centerline_turn_gain: float = 0.25
         centerline_turn_clip: float = 0.08
+        centerline_turn_sign: float = 1.0
         first_follower_lateral_gain_scale: float = 1.0
         first_follower_lateral_clip_scale: float = 1.0
         first_follower_lateral_clip_max: float = 0.04
@@ -968,6 +992,8 @@ class PlatoonEnvCfg(ManagerBasedRLEnvCfg):
         forward_bias_speed_margin: float = 0.02
         forward_bias_min_command: float = 0.0
         forward_bias_min_gap: float = 0.75
+        forward_bias_leader_gain_scale: float = 1.0
+        forward_bias_leader_clip_scale: float = 1.0
 
     attack: AttackCfg = AttackCfg()
     teacher: TeacherCfg = TeacherCfg()

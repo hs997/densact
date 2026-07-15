@@ -41,6 +41,14 @@ class PlatoonHAPPOCfg:
     device: str = "cpu"
     fixed_order: bool = True
     use_happo_factor: bool = True
+    share_actor: bool = False
+    actor_update_mode: str = "ppo"
+    trpo_kl_threshold: float = 0.01
+    trpo_cg_iters: int = 10
+    trpo_damping: float = 0.1
+    trpo_line_search_steps: int = 10
+    trpo_accept_ratio: float = 0.5
+    trpo_backtrack_coeff: float = 0.8
 
 
 class PlatoonHAPPORunner:
@@ -62,6 +70,13 @@ class PlatoonHAPPORunner:
             log_std_max=cfg.log_std_max,
             lr=cfg.actor_lr,
             max_grad_norm=cfg.max_grad_norm,
+            update_mode=cfg.actor_update_mode,
+            trpo_kl_threshold=cfg.trpo_kl_threshold,
+            trpo_cg_iters=cfg.trpo_cg_iters,
+            trpo_damping=cfg.trpo_damping,
+            trpo_line_search_steps=cfg.trpo_line_search_steps,
+            trpo_accept_ratio=cfg.trpo_accept_ratio,
+            trpo_backtrack_coeff=cfg.trpo_backtrack_coeff,
         )
         critic_cfg = HAPPOCriticCfg(
             share_obs_dim=cfg.share_obs_dim,
@@ -83,7 +98,11 @@ class PlatoonHAPPORunner:
             gae_lambda=cfg.gae_lambda,
             device=cfg.device,
         )
-        self.actors = [HAPPOActor(actor_cfg, self.device) for _ in range(cfg.num_agents)]
+        if cfg.share_actor:
+            shared_actor = HAPPOActor(actor_cfg, self.device)
+            self.actors = [shared_actor for _ in range(cfg.num_agents)]
+        else:
+            self.actors = [HAPPOActor(actor_cfg, self.device) for _ in range(cfg.num_agents)]
         self.critic = HAPPOCritic(critic_cfg, self.device)
         self.buffer = HAPPORolloutBuffer(buffer_cfg)
 
@@ -111,6 +130,15 @@ class PlatoonHAPPORunner:
         advantages = (advantages - advantages.mean()) / (advantages.std().clamp_min(1.0e-5))
 
         factor = torch.ones((self.cfg.episode_length, self.cfg.num_envs, 1), device=self.device)
+        if self.cfg.share_actor and not self.cfg.use_happo_factor:
+            actor_info = self.actors[0].train_shared_on_buffer(self.buffer, advantages, factor)
+            actor_train_infos = [dict(actor_info) for _ in range(self.cfg.num_agents)]
+            critic_train_info = self.critic.train_on_buffer(self.buffer)
+            self.buffer.after_update()
+            if self.device.type == "cuda":
+                torch.cuda.empty_cache()
+            return actor_train_infos, critic_train_info
+
         agent_order = list(range(self.cfg.num_agents))
         if not self.cfg.fixed_order:
             agent_order = torch.randperm(self.cfg.num_agents).tolist()

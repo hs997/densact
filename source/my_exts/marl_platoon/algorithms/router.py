@@ -187,6 +187,7 @@ class PlatoonAlgorithmRouter:
             "physical_acceleration_cost",
             "physical_jerk_cost",
             "physical_overspeed_cost",
+            "physical_centerline_cost",
             "physical_lateral_cost",
             "physical_heading_cost",
             "physical_backward_cost",
@@ -222,7 +223,7 @@ class PlatoonAlgorithmRouter:
         """Build the selected algorithm from a reset observation sample.
 
         PPO returns `None` so the existing RSL-RL PPO path remains untouched.
-        HAPPO/MAPPO create an internal centralized-critic runner but do not
+        HAPPO/MAPPO/HAA2C/HATRPO create an internal centralized-critic runner but do not
         start a separate training entrypoint.
         """
         agent_obs = self.to_agent_obs(obs)
@@ -242,7 +243,7 @@ class PlatoonAlgorithmRouter:
 
         if self.algorithm == "ppo":
             return None
-        if self.algorithm not in {"happo", "mappo"}:
+        if self.algorithm not in {"happo", "mappo", "haa2c", "hatrpo"}:
             raise ValueError(f"Unsupported platoon algorithm: {self.algorithm}")
         if self.runner is not None and self.info is not None:
             if (
@@ -275,8 +276,22 @@ class PlatoonAlgorithmRouter:
             log_std_max=float(getattr(self.cfg, "happo_log_std_max", 2.0)),
             max_grad_norm=float(getattr(self.cfg, "happo_max_grad_norm", 0.5)),
             device=str(self.device),
-            use_happo_factor=bool(getattr(self.cfg, "happo_use_factor", self.algorithm == "happo"))
-            and self.algorithm == "happo",
+            use_happo_factor=bool(getattr(self.cfg, "happo_use_factor", self.algorithm in {"happo", "haa2c", "hatrpo"}))
+            and self.algorithm in {"happo", "haa2c", "hatrpo"},
+            share_actor=bool(getattr(self.cfg, "happo_share_actor", False)),
+            actor_update_mode=(
+                "a2c"
+                if self.algorithm == "haa2c"
+                else "trpo"
+                if self.algorithm == "hatrpo"
+                else str(getattr(self.cfg, "happo_actor_update_mode", "ppo"))
+            ),
+            trpo_kl_threshold=float(getattr(self.cfg, "happo_trpo_kl_threshold", 0.01)),
+            trpo_cg_iters=int(getattr(self.cfg, "happo_trpo_cg_iters", 10)),
+            trpo_damping=float(getattr(self.cfg, "happo_trpo_damping", 0.1)),
+            trpo_line_search_steps=int(getattr(self.cfg, "happo_trpo_line_search_steps", 10)),
+            trpo_accept_ratio=float(getattr(self.cfg, "happo_trpo_accept_ratio", 0.5)),
+            trpo_backtrack_coeff=float(getattr(self.cfg, "happo_trpo_backtrack_coeff", 0.8)),
         )
         self.runner = PlatoonHAPPORunner(happo_cfg)
         self.runner.buffer.set_initial_obs(agent_obs, share_obs)
@@ -288,7 +303,10 @@ class PlatoonAlgorithmRouter:
             enable_attack=bool(getattr(self.cfg, "enable_attack", False)),
             enable_shield=bool(getattr(self.cfg, "enable_shield", False)),
         )
-        schedule = PipelineScheduleCfg(student_every_steps=episode_length)
+        schedule = PipelineScheduleCfg(
+            student_every_steps=episode_length,
+            teacher_every_student_updates=int(getattr(self.cfg, "teacher_every_student_updates", 8)),
+        )
         teacher = RewardTeacherModule(
             RewardTeacherCfg(
                 obs_dim=obs_dim,
@@ -298,6 +316,23 @@ class PlatoonAlgorithmRouter:
                 update_interval=int(getattr(self.cfg, "teacher_update_interval", 5)),
                 shaping_clip=float(getattr(self.cfg, "teacher_shaping_clip", 0.05)),
                 action_penalty_coef=float(getattr(self.cfg, "teacher_action_penalty_coef", 0.0)),
+                reward_ema_tau=float(getattr(self.cfg, "teacher_reward_ema_tau", 0.97)),
+                consistency_coef=float(getattr(self.cfg, "teacher_consistency_coef", 0.05)),
+                outer_delta_coef=float(getattr(self.cfg, "teacher_outer_delta_coef", 0.02)),
+                outer_delta_warmup_updates=int(getattr(self.cfg, "teacher_outer_delta_warmup_updates", 20)),
+                outer_delta_ramp_updates=int(getattr(self.cfg, "teacher_outer_delta_ramp_updates", 50)),
+                lambda_spacing=float(getattr(self.cfg, "teacher_lambda_spacing", 1.0)),
+                lambda_velocity=float(getattr(self.cfg, "teacher_lambda_velocity", 0.5)),
+                lambda_acceleration=float(getattr(self.cfg, "teacher_lambda_acceleration", 0.25)),
+                lambda_jerk=float(getattr(self.cfg, "teacher_lambda_jerk", 0.10)),
+                lambda_overspeed=float(getattr(self.cfg, "teacher_lambda_overspeed", 0.25)),
+                lambda_centerline=float(getattr(self.cfg, "teacher_lambda_centerline", 1.0)),
+                lambda_lateral=float(getattr(self.cfg, "teacher_lambda_lateral", 0.5)),
+                lambda_heading=float(getattr(self.cfg, "teacher_lambda_heading", 2.0)),
+                lambda_backward=float(getattr(self.cfg, "teacher_lambda_backward", 1.0)),
+                lambda_forward_deficit=float(getattr(self.cfg, "teacher_lambda_forward_deficit", 0.5)),
+                lambda_collision=float(getattr(self.cfg, "teacher_lambda_collision", 10.0)),
+                lambda_action_energy=float(getattr(self.cfg, "teacher_lambda_action_energy", 0.02)),
                 device=str(self.device),
             ),
             env=self.env,
@@ -379,6 +414,7 @@ class PlatoonAlgorithmRouter:
                 lateral_velocity_gain=float(getattr(safety_cfg, "lateral_velocity_gain", 0.25)),
                 centerline_turn_gain=float(getattr(safety_cfg, "centerline_turn_gain", 0.0)),
                 centerline_turn_clip=float(getattr(safety_cfg, "centerline_turn_clip", 0.0)),
+                centerline_turn_sign=float(getattr(safety_cfg, "centerline_turn_sign", 1.0)),
                 first_follower_lateral_gain_scale=float(getattr(safety_cfg, "first_follower_lateral_gain_scale", 1.0)),
                 first_follower_lateral_clip_scale=float(getattr(safety_cfg, "first_follower_lateral_clip_scale", 1.0)),
                 first_follower_lateral_clip_max=float(getattr(safety_cfg, "first_follower_lateral_clip_max", 0.18)),
@@ -398,6 +434,8 @@ class PlatoonAlgorithmRouter:
                 forward_bias_speed_margin=float(getattr(safety_cfg, "forward_bias_speed_margin", 0.02)),
                 forward_bias_min_command=float(getattr(safety_cfg, "forward_bias_min_command", 0.0)),
                 forward_bias_min_gap=float(getattr(safety_cfg, "forward_bias_min_gap", 0.75)),
+                forward_bias_leader_gain_scale=float(getattr(safety_cfg, "forward_bias_leader_gain_scale", 1.0)),
+                forward_bias_leader_clip_scale=float(getattr(safety_cfg, "forward_bias_leader_clip_scale", 1.0)),
             ),
         )
         self.pipeline = PlatoonTrainingPipeline(

@@ -40,6 +40,14 @@ class PlatoonAlgorithmCfg:
     # MAPPO uses the same centralized critic and per-agent actors but disables
     # HAPPO's sequential importance factor during actor updates.
     happo_use_factor: bool = True
+    happo_share_actor: bool = False
+    happo_actor_update_mode: str = "ppo"
+    happo_trpo_kl_threshold: float = 0.01
+    happo_trpo_cg_iters: int = 10
+    happo_trpo_damping: float = 0.1
+    happo_trpo_line_search_steps: int = 10
+    happo_trpo_accept_ratio: float = 0.5
+    happo_trpo_backtrack_coeff: float = 0.8
     happo_actor_lr: float = 1.0e-5
     happo_critic_lr: float = 1.0e-5
     happo_clip_param: float = 0.05
@@ -65,11 +73,29 @@ class PlatoonAlgorithmCfg:
     local_reward_last_follower_centerline_scale: float = 1.0
     local_reward_last_follower_pair_lateral_scale: float = 1.0
     local_reward_last_follower_turn_scale: float = 1.0
-    teacher_shaping_coef: float = 0.001
-    teacher_lr: float = 1.0e-4
-    teacher_update_interval: int = 5
-    teacher_shaping_clip: float = 0.03
-    teacher_action_penalty_coef: float = 0.0
+    teacher_shaping_coef: float = 0.02
+    teacher_lr: float = 3.0e-4
+    teacher_update_interval: int = 1
+    teacher_every_student_updates: int = 2
+    teacher_shaping_clip: float = 0.20
+    teacher_action_penalty_coef: float = 0.001
+    teacher_reward_ema_tau: float = 0.95
+    teacher_consistency_coef: float = 0.03
+    teacher_outer_delta_coef: float = 0.08
+    teacher_outer_delta_warmup_updates: int = 5
+    teacher_outer_delta_ramp_updates: int = 20
+    teacher_lambda_spacing: float = 1.0
+    teacher_lambda_velocity: float = 0.5
+    teacher_lambda_acceleration: float = 0.25
+    teacher_lambda_jerk: float = 0.10
+    teacher_lambda_overspeed: float = 0.25
+    teacher_lambda_centerline: float = 1.0
+    teacher_lambda_lateral: float = 0.5
+    teacher_lambda_heading: float = 2.0
+    teacher_lambda_backward: float = 1.0
+    teacher_lambda_forward_deficit: float = 0.5
+    teacher_lambda_collision: float = 10.0
+    teacher_lambda_action_energy: float = 0.02
 
     # Attack profile (task-internal attacker preset): off|light|easy|medium|hard
     attack_level: str = "off"

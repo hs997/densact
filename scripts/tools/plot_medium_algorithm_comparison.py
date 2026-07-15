@@ -19,6 +19,9 @@ LABELS = {
     "mappo": "MAPPO",
     "happo_no_meta": "HAPPO w/o meta",
     "happo_meta": "HAPPO + meta",
+    "harl_mappo_shared": "HARL MAPPO shared",
+    "harl_haa2c": "HARL HAA2C",
+    "harl_hatrpo": "HARL HATRPO",
 }
 
 
@@ -46,8 +49,17 @@ def checkpoint_iteration(name: str, fallback: int) -> int:
 def load_eval(result_root: Path) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     final_iteration = manifest_value(result_root, "max_iterations", -1)
-    for label in LABELS:
-        summary_path = result_root / "evaluation" / label / "eval_summary.csv"
+    eval_root = result_root / "evaluation"
+    labels = [label for label in LABELS if (eval_root / label / "eval_summary.csv").exists()]
+    labels.extend(
+        sorted(
+            path.parent.name
+            for path in eval_root.glob("*/eval_summary.csv")
+            if path.parent.name not in labels
+        )
+    )
+    for label in labels:
+        summary_path = eval_root / label / "eval_summary.csv"
         if not summary_path.exists():
             print(f"[WARN] missing eval summary: {summary_path}")
             continue

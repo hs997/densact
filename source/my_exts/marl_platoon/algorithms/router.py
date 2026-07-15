@@ -153,6 +153,18 @@ class PlatoonAlgorithmRouter:
             "ratio",
             "actor_grad_norm",
             "critic_grad_norm",
+            "ams_enabled",
+            "ams_q_loss",
+            "ams_q_grad_norm",
+            "ams_anchor_q_mean",
+            "ams_target_q_mean",
+            "ams_neighborhood_q_mean",
+            "ams_neighborhood_var",
+            "ams_local_adv_mean",
+            "ams_local_adv_std",
+            "ams_advantage_weight",
+            "ams_num_neighbors",
+            "ams_radius",
             "attack_enabled",
             "attack_level",
             "attack_mode",
@@ -292,6 +304,22 @@ class PlatoonAlgorithmRouter:
             trpo_line_search_steps=int(getattr(self.cfg, "happo_trpo_line_search_steps", 10)),
             trpo_accept_ratio=float(getattr(self.cfg, "happo_trpo_accept_ratio", 0.5)),
             trpo_backtrack_coeff=float(getattr(self.cfg, "happo_trpo_backtrack_coeff", 0.8)),
+            ams_enabled=bool(getattr(self.cfg, "happo_ams_enabled", False)),
+            ams_lr=float(getattr(self.cfg, "happo_ams_lr", 1.0e-4)),
+            ams_tau=float(getattr(self.cfg, "happo_ams_tau", 0.01)),
+            ams_num_neighbors=int(getattr(self.cfg, "happo_ams_num_neighbors", 8)),
+            ams_neighborhood_radius=float(getattr(self.cfg, "happo_ams_neighborhood_radius", 0.25)),
+            ams_action_limit=float(getattr(self.cfg, "happo_action_clip", 0.4)),
+            ams_refresh_every=int(getattr(self.cfg, "happo_ams_refresh_every", 1000)),
+            ams_huber_beta=float(getattr(self.cfg, "happo_ams_huber_beta", 0.3)),
+            ams_q_epochs=int(getattr(self.cfg, "happo_ams_q_epochs", 1)),
+            ams_num_mini_batches=int(getattr(self.cfg, "happo_ams_num_mini_batches", 16)),
+            ams_max_grad_norm=float(getattr(self.cfg, "happo_ams_max_grad_norm", 0.5)),
+            ams_target_clip=float(getattr(self.cfg, "happo_ams_target_clip", 100.0)),
+            ams_eval_chunk_size=int(getattr(self.cfg, "happo_ams_eval_chunk_size", 8192)),
+            ams_advantage_weight=float(getattr(self.cfg, "happo_ams_advantage_weight", 0.10)),
+            ams_warmup_updates=int(getattr(self.cfg, "happo_ams_warmup_updates", 50)),
+            ams_ramp_updates=int(getattr(self.cfg, "happo_ams_ramp_updates", 100)),
         )
         self.runner = PlatoonHAPPORunner(happo_cfg)
         self.runner.buffer.set_initial_obs(agent_obs, share_obs)
@@ -452,7 +480,10 @@ class PlatoonAlgorithmRouter:
                 "[Platoon HAPPO] runner built: "
                 f"num_envs={self.num_envs}, num_agents={self.num_agents}, "
                 f"obs_dim={obs_dim}, act_dim={act_dim}, share_obs_dim={share_obs_dim}, "
-                f"episode_length={episode_length}, device={self.device}"
+                f"episode_length={episode_length}, device={self.device}, "
+                f"ams={int(happo_cfg.ams_enabled)}, ams_k={happo_cfg.ams_num_neighbors}, "
+                f"ams_radius={happo_cfg.ams_neighborhood_radius:.3f}, "
+                f"ams_weight={happo_cfg.ams_advantage_weight:.3f}"
             )
             self._printed_build = True
         return self.runner
@@ -488,7 +519,7 @@ class PlatoonAlgorithmRouter:
         if self.runner is None:
             return {}
         return {
-            "version": 1,
+            "version": 2,
             "algorithm": self.algorithm,
             "num_agents": self.num_agents,
             "info": self.info.__dict__ if self.info is not None else None,
@@ -576,7 +607,9 @@ class PlatoonAlgorithmRouter:
                         f"value_loss={update_info.get('value_loss', 0.0):.4f}, "
                         f"ratio={update_info.get('ratio', 0.0):.4f}, "
                         f"actor_grad_norm={update_info.get('actor_grad_norm', 0.0):.4f}, "
-                        f"critic_grad_norm={update_info.get('critic_grad_norm', 0.0):.4f}"
+                        f"critic_grad_norm={update_info.get('critic_grad_norm', 0.0):.4f}, "
+                        f"ams_q_loss={update_info.get('ams_q_loss', 0.0):.4f}, "
+                        f"ams_weight={update_info.get('ams_advantage_weight', 0.0):.4f}"
                     )
                 atk_interval = int(getattr(self.cfg, "attack_log_interval_updates", 20))
                 if isinstance(logs, dict) and atk_interval > 0 and self.happo_update_count % atk_interval == 0:
@@ -917,6 +950,18 @@ class PlatoonAlgorithmRouter:
             "ratio": float(update_info.get("ratio", 0.0)),
             "actor_grad_norm": float(update_info.get("actor_grad_norm", 0.0)),
             "critic_grad_norm": float(update_info.get("critic_grad_norm", 0.0)),
+            "ams_enabled": float(update_info.get("ams_enabled", 0.0)),
+            "ams_q_loss": float(update_info.get("ams_q_loss", 0.0)),
+            "ams_q_grad_norm": float(update_info.get("ams_q_grad_norm", 0.0)),
+            "ams_anchor_q_mean": float(update_info.get("ams_anchor_q_mean", 0.0)),
+            "ams_target_q_mean": float(update_info.get("ams_target_q_mean", 0.0)),
+            "ams_neighborhood_q_mean": float(update_info.get("ams_neighborhood_q_mean", 0.0)),
+            "ams_neighborhood_var": float(update_info.get("ams_neighborhood_var", 0.0)),
+            "ams_local_adv_mean": float(update_info.get("ams_local_adv_mean", 0.0)),
+            "ams_local_adv_std": float(update_info.get("ams_local_adv_std", 0.0)),
+            "ams_advantage_weight": float(update_info.get("ams_advantage_weight", 0.0)),
+            "ams_num_neighbors": float(update_info.get("ams_num_neighbors", 0.0)),
+            "ams_radius": float(update_info.get("ams_radius", 0.0)),
         }
 
     def _collect_attack_metrics(self, attack_info: Any) -> dict[str, Any]:

@@ -10,6 +10,7 @@ TAG="${TAG:-medium_compare_$(date +%Y%m%d_%H%M%S)}"
 PIPELINE_LOG="${PIPELINE_LOG:-${ROOT}/train_${TAG}.log}"
 RESULT_ROOT="${RESULT_ROOT:-${LOG_ROOT}/${TAG}_package}"
 RESULT_TAR="${RESULT_TAR:-${RESULT_ROOT}.tar.gz}"
+PROGRESS_NOTES_PATH="${PROGRESS_NOTES_PATH:-${ROOT}/debug_notes.md}"
 
 NUM_ENVS="${NUM_ENVS:-64}"
 EVAL_NUM_ENVS="${EVAL_NUM_ENVS:-32}"
@@ -97,6 +98,20 @@ HAPPO_META_TEACHER_LAMBDA_ACTION_ENERGY="${HAPPO_META_TEACHER_LAMBDA_ACTION_ENER
 HAPPO_META_EXTRA_OVERRIDES="${HAPPO_META_EXTRA_OVERRIDES:-}"
 HAPPO_META_TRAIN_EXTRA_OVERRIDES="${HAPPO_META_TRAIN_EXTRA_OVERRIDES:-}"
 HAPPO_META_EVAL_EXTRA_OVERRIDES="${HAPPO_META_EVAL_EXTRA_OVERRIDES:-}"
+HAPPO_AMS_LR="${HAPPO_AMS_LR:-1.0e-4}"
+HAPPO_AMS_TAU="${HAPPO_AMS_TAU:-0.01}"
+HAPPO_AMS_NUM_NEIGHBORS="${HAPPO_AMS_NUM_NEIGHBORS:-8}"
+HAPPO_AMS_NEIGHBORHOOD_RADIUS="${HAPPO_AMS_NEIGHBORHOOD_RADIUS:-0.25}"
+HAPPO_AMS_REFRESH_EVERY="${HAPPO_AMS_REFRESH_EVERY:-1000}"
+HAPPO_AMS_HUBER_BETA="${HAPPO_AMS_HUBER_BETA:-0.3}"
+HAPPO_AMS_Q_EPOCHS="${HAPPO_AMS_Q_EPOCHS:-1}"
+HAPPO_AMS_NUM_MINI_BATCHES="${HAPPO_AMS_NUM_MINI_BATCHES:-16}"
+HAPPO_AMS_MAX_GRAD_NORM="${HAPPO_AMS_MAX_GRAD_NORM:-0.5}"
+HAPPO_AMS_TARGET_CLIP="${HAPPO_AMS_TARGET_CLIP:-100.0}"
+HAPPO_AMS_EVAL_CHUNK_SIZE="${HAPPO_AMS_EVAL_CHUNK_SIZE:-8192}"
+HAPPO_AMS_ADVANTAGE_WEIGHT="${HAPPO_AMS_ADVANTAGE_WEIGHT:-0.10}"
+HAPPO_AMS_WARMUP_UPDATES="${HAPPO_AMS_WARMUP_UPDATES:-50}"
+HAPPO_AMS_RAMP_UPDATES="${HAPPO_AMS_RAMP_UPDATES:-100}"
 
 HAPPO_META_OVERRIDES=(
   "env.algorithm.algorithm=happo"
@@ -126,6 +141,24 @@ HAPPO_META_OVERRIDES=(
 read -r -a HAPPO_META_EXTRA_OVERRIDE_ITEMS <<< "${HAPPO_META_EXTRA_OVERRIDES}"
 read -r -a HAPPO_META_TRAIN_EXTRA_OVERRIDE_ITEMS <<< "${HAPPO_META_TRAIN_EXTRA_OVERRIDES}"
 read -r -a HAPPO_META_EVAL_EXTRA_OVERRIDE_ITEMS <<< "${HAPPO_META_EVAL_EXTRA_OVERRIDES}"
+
+HAPPO_AMS_OVERRIDES=(
+  "env.algorithm.happo_ams_enabled=true"
+  "env.algorithm.happo_ams_lr=${HAPPO_AMS_LR}"
+  "env.algorithm.happo_ams_tau=${HAPPO_AMS_TAU}"
+  "env.algorithm.happo_ams_num_neighbors=${HAPPO_AMS_NUM_NEIGHBORS}"
+  "env.algorithm.happo_ams_neighborhood_radius=${HAPPO_AMS_NEIGHBORHOOD_RADIUS}"
+  "env.algorithm.happo_ams_refresh_every=${HAPPO_AMS_REFRESH_EVERY}"
+  "env.algorithm.happo_ams_huber_beta=${HAPPO_AMS_HUBER_BETA}"
+  "env.algorithm.happo_ams_q_epochs=${HAPPO_AMS_Q_EPOCHS}"
+  "env.algorithm.happo_ams_num_mini_batches=${HAPPO_AMS_NUM_MINI_BATCHES}"
+  "env.algorithm.happo_ams_max_grad_norm=${HAPPO_AMS_MAX_GRAD_NORM}"
+  "env.algorithm.happo_ams_target_clip=${HAPPO_AMS_TARGET_CLIP}"
+  "env.algorithm.happo_ams_eval_chunk_size=${HAPPO_AMS_EVAL_CHUNK_SIZE}"
+  "env.algorithm.happo_ams_advantage_weight=${HAPPO_AMS_ADVANTAGE_WEIGHT}"
+  "env.algorithm.happo_ams_warmup_updates=${HAPPO_AMS_WARMUP_UPDATES}"
+  "env.algorithm.happo_ams_ramp_updates=${HAPPO_AMS_RAMP_UPDATES}"
+)
 
 latest_run_for_name() {
   local run_name="$1"
@@ -215,6 +248,13 @@ run_train_label() {
         "${HAPPO_META_EXTRA_OVERRIDE_ITEMS[@]}" \
         "${HAPPO_META_TRAIN_EXTRA_OVERRIDE_ITEMS[@]}"
       ;;
+    happo_meta_ams)
+      run_train "${label}" \
+        "${HAPPO_META_OVERRIDES[@]}" \
+        "${HAPPO_AMS_OVERRIDES[@]}" \
+        "${HAPPO_META_EXTRA_OVERRIDE_ITEMS[@]}" \
+        "${HAPPO_META_TRAIN_EXTRA_OVERRIDE_ITEMS[@]}"
+      ;;
     harl_mappo_shared)
       run_train "${label}" \
         "env.algorithm.algorithm=mappo" \
@@ -273,6 +313,13 @@ run_eval_label() {
     happo_meta)
       run_eval "${label}" "${run_dir}" \
         "${HAPPO_META_OVERRIDES[@]}" \
+        "${HAPPO_META_EXTRA_OVERRIDE_ITEMS[@]}" \
+        "${HAPPO_META_EVAL_EXTRA_OVERRIDE_ITEMS[@]}"
+      ;;
+    happo_meta_ams)
+      run_eval "${label}" "${run_dir}" \
+        "${HAPPO_META_OVERRIDES[@]}" \
+        "${HAPPO_AMS_OVERRIDES[@]}" \
         "${HAPPO_META_EXTRA_OVERRIDE_ITEMS[@]}" \
         "${HAPPO_META_EVAL_EXTRA_OVERRIDE_ITEMS[@]}"
       ;;
@@ -406,6 +453,21 @@ rm -f "${RESULT_ROOT}/training/runs.txt" "${RESULT_ROOT}/training/runs.lock"
   echo "happo_meta_extra_overrides=${HAPPO_META_EXTRA_OVERRIDES}"
   echo "happo_meta_train_extra_overrides=${HAPPO_META_TRAIN_EXTRA_OVERRIDES}"
   echo "happo_meta_eval_extra_overrides=${HAPPO_META_EVAL_EXTRA_OVERRIDES}"
+  echo "happo_ams_lr=${HAPPO_AMS_LR}"
+  echo "happo_ams_tau=${HAPPO_AMS_TAU}"
+  echo "happo_ams_num_neighbors=${HAPPO_AMS_NUM_NEIGHBORS}"
+  echo "happo_ams_neighborhood_radius=${HAPPO_AMS_NEIGHBORHOOD_RADIUS}"
+  echo "happo_ams_refresh_every=${HAPPO_AMS_REFRESH_EVERY}"
+  echo "happo_ams_huber_beta=${HAPPO_AMS_HUBER_BETA}"
+  echo "happo_ams_q_epochs=${HAPPO_AMS_Q_EPOCHS}"
+  echo "happo_ams_num_mini_batches=${HAPPO_AMS_NUM_MINI_BATCHES}"
+  echo "happo_ams_max_grad_norm=${HAPPO_AMS_MAX_GRAD_NORM}"
+  echo "happo_ams_target_clip=${HAPPO_AMS_TARGET_CLIP}"
+  echo "happo_ams_eval_chunk_size=${HAPPO_AMS_EVAL_CHUNK_SIZE}"
+  echo "happo_ams_advantage_weight=${HAPPO_AMS_ADVANTAGE_WEIGHT}"
+  echo "happo_ams_warmup_updates=${HAPPO_AMS_WARMUP_UPDATES}"
+  echo "happo_ams_ramp_updates=${HAPPO_AMS_RAMP_UPDATES}"
+  echo "progress_notes_path=${PROGRESS_NOTES_PATH}"
   echo "local_backup=/home/cnc/SSD_1T/xzw/IsaacLab-main/backups/pre_medium_compare_code_assets_20260701_022215.tar"
   echo "git_backup_commit=79b8290"
   echo "git_current_commit=$(git rev-parse --short HEAD 2>/dev/null || true)"
@@ -477,7 +539,7 @@ if [[ "${SKIP_EVAL}" != "1" ]]; then
 fi
 
 cp -a "${PIPELINE_LOG}" "${RESULT_ROOT}/pipeline.log" 2>/dev/null || true
-cp -a debug_notes.md "${RESULT_ROOT}/debug_notes.md" 2>/dev/null || true
+cp -a "${PROGRESS_NOTES_PATH}" "${RESULT_ROOT}/$(basename "${PROGRESS_NOTES_PATH}")" 2>/dev/null || true
 git diff > "${RESULT_ROOT}/git_diff_after_medium_compare.diff" || true
 tar -czf "${RESULT_TAR}" -C "$(dirname "${RESULT_ROOT}")" "$(basename "${RESULT_ROOT}")"
 echo "[MEDIUM_COMPARE] result root: ${RESULT_ROOT}"

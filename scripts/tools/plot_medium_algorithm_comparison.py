@@ -19,6 +19,7 @@ LABELS = {
     "mappo": "MAPPO",
     "happo_no_meta": "HAPPO w/o meta",
     "happo_meta": "HAPPO + meta",
+    "happo_meta_ams": "HAPPO + meta + AMS",
     "harl_mappo_shared": "HARL MAPPO shared",
     "harl_haa2c": "HARL HAA2C",
     "harl_hatrpo": "HARL HATRPO",

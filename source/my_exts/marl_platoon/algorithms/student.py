@@ -86,11 +86,15 @@ class HAPPOStudentModule(StudentModule):
             actor_entropy = sum(info.get("dist_entropy", 0.0) for info in actor_infos) / len(actor_infos)
             ratio_mean = sum(info.get("ratio", 0.0) for info in actor_infos) / len(actor_infos)
             actor_grad_norm_mean = sum(info.get("actor_grad_norm", 0.0) for info in actor_infos) / len(actor_infos)
-        return {
-            "policy_loss": policy_loss,
-            "dist_entropy": actor_entropy,
-            "ratio": ratio_mean,
-            "actor_grad_norm": actor_grad_norm_mean,
-            "value_loss": float(critic_info.get("value_loss", 0.0)),
-            "critic_grad_norm": float(critic_info.get("critic_grad_norm", 0.0)),
-        }
+        summary = dict(critic_info)
+        summary.update(
+            {
+                "policy_loss": policy_loss,
+                "dist_entropy": actor_entropy,
+                "ratio": ratio_mean,
+                "actor_grad_norm": actor_grad_norm_mean,
+                "value_loss": float(critic_info.get("value_loss", 0.0)),
+                "critic_grad_norm": float(critic_info.get("critic_grad_norm", 0.0)),
+            }
+        )
+        return summary

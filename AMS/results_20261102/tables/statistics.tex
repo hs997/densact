@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\caption{Exploratory paired hard-b comparisons: Meta-AMS minus comparator.}
+\label{tab:tests}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrr}
+\toprule
+Comparator & $\Delta$ (pp) & Exact $p$ & Holm $p$ \\
+\midrule
+MAPPO & 46.53 & 0.25 & 1.00 \\
+HAPPO (no Meta) & 45.83 & 0.25 & 1.00 \\
+Shared MAPPO & 90.28 & 0.25 & 1.00 \\
+HAA2C & 65.97 & 0.25 & 1.00 \\
+HATRPO & 93.06 & 0.25 & 1.00 \\
+\bottomrule
+\end{tabular}
+
+\vspace{2pt}\begin{minipage}{\linewidth}\footnotesize Two-sided exact sign-flip tests enumerate all eight sign assignments of three matched seed differences. Five post-hoc comparisons form one Holm family. This tests the gated procedure conditional on exchangeability; it does not isolate an AMS module effect.\end{minipage}
+\end{table}

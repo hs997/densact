@@ -1,0 +1,38 @@
+{
+  "mappo": {
+    "status": "stopped_at_gate",
+    "stopped_level": "hard_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-30_03-59-30_ackermann_completion_20261027_s1_mappo_hard_a_r1_mappo/model_final.pt",
+    "checkpoint_sha256": "e17d0a006f60e45134d0970bfd0760922c9a47b748cad534f5e8c6397d1191ec"
+  },
+  "happo_no_meta": {
+    "status": "stopped_at_gate",
+    "stopped_level": "hard_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-30_12-07-16_ackermann_completion_20261027_s1_happo_no_meta_hard_a_r1_happo_no_meta/model_final.pt",
+    "checkpoint_sha256": "5ecdfcd94af87423f7e32aac3f6bc57968d6cd576750a04dd7b1fbb03499dc4b"
+  },
+  "happo_meta_ams": {
+    "status": "passed_hard_b",
+    "stopped_level": null,
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-30_20-45-56_ackermann_completion_20261027_s1_happo_meta_ams_hard_b_r1_happo_meta_ams/model_final.pt",
+    "checkpoint_sha256": "40c2da2d04223faa0ae308c28e6e7bdd138bd02a0300ccd386a43339ffc76d05"
+  },
+  "harl_mappo_shared": {
+    "status": "stopped_at_gate",
+    "stopped_level": "light",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_bc_warmstart/real_trajectory_bc/model_bc.pt",
+    "checkpoint_sha256": "6b8c15acf17b7e250a65fc85609c304ba2cc14f8d0a65d8f34b4188f6e801615"
+  },
+  "harl_haa2c": {
+    "status": "stopped_at_gate",
+    "stopped_level": "easy_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-31_06-14-21_ackermann_completion_20261027_s1_harl_haa2c_easy_a_r1_harl_haa2c/model_final.pt",
+    "checkpoint_sha256": "921fe87bcacaa4088059a9517e1dffd555f1cca4c0ad2fe1321cacaef7fe9acd"
+  },
+  "harl_hatrpo": {
+    "status": "stopped_at_gate",
+    "stopped_level": "light",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_bc_warmstart/real_trajectory_bc/model_bc.pt",
+    "checkpoint_sha256": "6b8c15acf17b7e250a65fc85609c304ba2cc14f8d0a65d8f34b4188f6e801615"
+  }
+}

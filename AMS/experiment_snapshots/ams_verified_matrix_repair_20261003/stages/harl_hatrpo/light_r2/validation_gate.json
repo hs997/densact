@@ -1,0 +1,22 @@
+{
+  "passed": false,
+  "clean_ok": false,
+  "safe": false,
+  "rows": [
+    {
+      "completion": 0.0,
+      "instant": 0.0,
+      "dwell": 0.0,
+      "collision": 0.0,
+      "road_any": 0.0625,
+      "road_termination": 0.0625,
+      "name": "clean_env42",
+      "attack_enabled": 0,
+      "checkpoint_sha256": "068175948dcb66bc746202608f246d191b60df2e32cb32be453911e105cfe048",
+      "env_seed": 42,
+      "attack_seed": 3407
+    }
+  ],
+  "threshold": 0.75,
+  "attack_completion_min": 0.0
+}

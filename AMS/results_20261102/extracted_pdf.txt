@@ -1,0 +1,411 @@
+                                                                                                                                        1
+
+
+
+
+        Meta-AMS: Veriﬁed Multi-Seed Experimental
+               Results and Statistical Audit
+                                                     Meta-AMS Project
+                                    Experimental Evidence Supplement—2 November 2026
+
+
+
+   Abstract—This supplement reports the completed six-method            matrices are selected-policy assessments on ﬁxed evaluation
+comparison for a ﬁve-vehicle spatial lane-change task under hy-         conditions, not a separate held-out generalization test.
+brid attacks. All methods begin from one common real-trajectory
+behavior-cloning (BC) checkpoint and use three adaptation-
+training seeds, strict clean regression, and gated attack escalation.   B. Completion, Safety, and Promotion
+The executed campaign contains 104 training blocks, 4160 policy
+updates, 450 ﬁnal evaluation records, and 162 ﬁnal video evidence          The reported completion is the fraction of environments
+sets. Meta-AMS attains a hard-b whole-platoon completion mean           in which the entire ﬁve-vehicle platoon has satisﬁed the
+of 93.06%, with a sample standard deviation of 1.20 percentage          implemented completion conditions with the required 2 s dwell
+points across training-seed means, and passes the hard-b gate in        at least once within the evaluation horizon. The recorded
+all three runs. Clean through hard-a completion is 100%, and all
+                                                                        tolerances include path progress at least 0.99, lateral error at
+recorded ﬁnal evaluations have zero collision and road-boundary
+violation rates. These are conditional results of the implemented       most 0.12 m, heading error at most 0.12 rad, gap error at most
+gated training and selection procedure. Early stopping, fallback        0.35 m, and pair lateral error at most 0.20 m. Cumulative
+to the common BC policy, differing realized budgets, and reuse          completion is not the fraction continuously satisfying the
+of the evaluation seeds for selection are disclosed. Exploratory        conditions for the entire episode or after the terminal reset.
+exact paired tests yield unadjusted two-sided p = 0.25 and Holm-
+                                                                           Strict clean acceptance requires cumulative completion,
+adjusted p = 1.00 against each comparator; the present three-
+seed sample does not establish statistical signiﬁcance.                 peak instantaneous completion and peak dwell completion all
+                                                                        equal to one, with zero collision, road-boundary-any violation
+   Index Terms—Meta-AMS, multi-agent reinforcement learning,
+Ackermann platoon, reproducibility, training seeds, hybrid at-
+                                                                        and road-boundary termination. Attack promotion additionally
+tacks.                                                                  uses the minimum completion across all three evaluation pairs.
+                                                                        Its thresholds are 0.75 for light through easy-b, 0.65 for med-
+                                                                        a, 0.55 for med-b, and 0.50 for hard-a and hard-b. Safety
+            I. S COPE AND E XECUTED P ROTOCOL
+                                                                        requirements remain zero throughout.
+   This    report    concerns      only    the    campaign
+ackermann_completion_20261027/uniform_six,
+completed on 2 November 2026 at 07:01 CST. It is distinct               C. Training and Method Identity
+from the earlier single-chain comparison, the orthogonal-                  The campaign uses 32 training environments, 32 rollout
+ablation cohort, and the repaired retention-continuation                steps per update, a cap of 40 updates per attack stage, and one
+cohort. Their numerical results are not pooled. The original            candidate per stage. Eight successful attack stages therefore
+manuscript’s algorithmic propositions are not rederived or              correspond to 320 updates. The actor learning rate is 5×10−7 .
+modiﬁed here.                                                           The BC and reference-policy KL coefﬁcients are 4.0 and 0.8.
+                                                                        Expert action blending and retention/expert-exit schedules are
+A. Common Initialization and Task                                       disabled during this campaign; the safety shield remains active.
+                                                                        Training mixes 50% clean environments with the conﬁgured
+   Each method starts from the same supplied BC checkpoint,
+                                                                        attack proﬁle at full stage strength. Evaluation uses full attack
+ﬁtted using simulator-executed vehicle trajectories. The adap-
+                                                                        strength and no clean mixture.
+tation seeds are 42, 3407, and 777. These are three adaptation
+                                                                           The AMS conﬁguration uses K = 8, normalized radius
+runs conditional on one BC ﬁt, not three independent BC
+                                                                        0.25, maximum advantage weight 0.1, 50-update warm-up
+ﬁts or three runs from random initialization. The task uses
+                                                                        and 100-update ramp, and risk coefﬁcient zero. These are
+ﬁve simulated Ackermann vehicles following one spatial lane-
+                                                                        conﬁguration values, not empirical evidence for the theoretical
+change path, with front steering and no rear steering in the
+                                                                        isotropy or smoothness assumptions. Table I records the actual
+recorded vehicle interface. The initial vehicle spacing is 1.50
+                                                                        method switches. Different actor-sharing and update rules
+m; the shared spatial transition starts at x = −7.75 m and has
+                                                                        prevent attributing every six-method difference solely to AMS
+length 6 m, connecting y = −0.065 m to y = −1.160 m.
+                                                                        or the meta teacher.
+   Every reported ﬁnal evaluation uses 16 environments and
+3500 steps (70 s). Each attacked checkpoint is evaluated at the
+ﬁxed environment/attack seed pairs (42, 3407), (3407, 9917),                              II. C OMPLETED R ESULTS
+and (777, 17011). Clean evaluation uses (42, 3407). The same               All 18 method–training-seed procedures reached a recorded
+pairs are also used during candidate promotion. Thus, the ﬁnal          terminal outcome under the ﬁxed gate rules. This means
+                                                                                                                                                 2
+
+
+
+                           TABLE I                                              MAPPO, HAPPO without Meta, Meta-AMS and HAA2C, two
+M ETHOD SWITCHES IN THE EXECUTED REPOSITORY IMPLEMENTATIONS .                   for shared MAPPO, and one for HATRPO. The zero hard-
+                                                                                b results for HATRPO describe that common fallback policy
+    Method                  Meta AMS Factor Shared Update
+                                                                                after unsuccessful training attempts; they do not show three
+    MAPPO                       0        0        0           0    PPO          independently trained HATRPO policies with zero variance.
+    HAPPO (no Meta)             0        0        1           0    PPO             Table IV discloses both attempted and retained training
+    Meta-AMS                    1        1        1           1    PPO
+    Shared MAPPO                0        0        0           1    PPO          updates. Total attempted updates are 4160, corresponding to
+    HAA2C                       0        0        1           1    A2C          4,259,840 recorded environment transitions. This total ex-
+    HATRPO                      0        0        1           1    TRPO         cludes the shared BC ﬁt, all evaluations, and video recording.
+These are the repository implementations selected by the recorded ﬂags,         The campaign equalizes the per-stage cap and promotion
+not a claim of unmodiﬁed external HARL code. Architecture/sharing differs       criteria; realized training budgets differ because of early
+between some rows.
+                                                                                stopping. It therefore compares the executed training-and-
+                                                                                selection procedures, not fully tuned algorithms under equal
+                              TABLE II
+    F INAL RETAINED POLICIES AT HARD - B : COMPLETION IN PERCENT.               total compute.
+
+          Method                    Mean ± SD Worst Pass                               III. T RAINING -S EED S TATISTICAL A NALYSIS
+          MAPPO            46.53 ± 2.41               37.50       0/3           A. Unit of Analysis
+          HAPPO (no Meta) 47.22 ± 7.89                37.50       1/3
+          Meta-AMS         93.06 ± 1.20               87.50       3/3              For method m, adaptation seed s, and hard-b evaluation pair
+          Shared MAPPO      2.78 ± 4.81                0.00       0/3           e, let Cmse be the recorded whole-platoon completion rate. We
+          HAA2C           27.08 ± 20.52                6.25       0/3           ﬁrst compute
+          HATRPO            0.00 ± 0.00                0.00       0/3
+                                                                                                  1X                        1X
+                                                                                                      3                        3
+SD is across three training-seed means, not nine independent ﬁts. Pass counts
+ﬁnal evaluation gates. HATRPO retains the common BC model in all three
+                                                                                         Mms =          Cmse ,      bm =
+                                                                                                                    µ             Mms .       (1)
+                                                                                                  3 e=1                     3 s=1
+runs; shared MAPPO does so in two runs.
+                                                                                The descriptive spread is the sample standard deviation of
+                                                                                the three Mms values, using denominator 3 − 1. The nine
+the prescribed comparison is complete, not that all methods                     evaluations, the 16 parallel environments, the ﬁve vehicles,
+successfully trained through hard-b. Every ﬁnal retained model                  and the 3500 time steps are not substituted for independent
+was assessed at clean and all eight attack strengths. The ﬁnal                  training replicates. We report raw seed points and SD, rather
+evidence comprises 18(1 + 8 × 3) = 450 evaluation records                       than presenting a small-sample bootstrap interval as a reliable
+and 18 × 9 = 162 video/trajectory evidence sets.                                population conﬁdence interval.
+
+A. Meta-AMS                                                                     B. Exploratory Exact Paired Tests
+   Meta-AMS passes all training-stage gates in all three runs.                    Hard-b is the exploratory endpoint for the ﬁve Meta-AMS
+Its ﬁnal hard-b training-seed means are 93.75%, 93.75%, and                     versus comparator contrasts. This analysis was deﬁned after
+91.67%. Their overall mean is 93.06%; the sample standard                       the results were available; it is not preregistered. Matching uses
+deviation is 1.20 percentage points. The worst of the nine                      the common adaptation-seed
+                                                                                                     P           index. Let Ds = MMeta-AMS,s −
+hard-b evaluation records is 87.5%. Clean through hard-a                        Mm,s and T = | 31 s Ds |. We enumerate all 23 = 8 sign
+completion is 100% in all three training runs and all corre-                    assignments η ∈ {−1, +1}3 and compute
+sponding evaluation pairs. All 450 ﬁnal evaluations, including                                               (                     )
+                                                                                                    1X           1X
+                                                                                                                    3
+the baselines, have zero recorded collision, road-boundary-
+                                                                                             pm =         1            ηs D s ≥ T .            (2)
+any violation and road-boundary termination. Safety without                                         8 η          3 s=1
+maneuver completion is not counted as task success.
+                                                                                This is the two-sided paired sample-label/sign-ﬂip construc-
+                                                                                tion described in the permutation-test documentation [1]. Its
+B. Retained Policies and Rejected Candidates                                    conditional validity requires exchangeability of the paired
+   The tables use the ﬁnal retained checkpoint. A rejected                      labels/signs under the null, and independence across seed pairs
+hard-b candidate is not substituted into the ﬁnal comparison.                   conditional on the common ﬁxed BC ﬁt. Matching the integer
+For example, HAPPO without Meta stops at a rejected hard-                       seed alone does not prove these assumptions. The estimand
+b candidate in every run and retains its hard-a checkpoint.                     includes the deterministic gate, selection and fallback rule.
+The retained s0 checkpoint subsequently passes the hard-b                       It is not the performance of a successfully trained policy
+assessment (minimum 50%), even though its newer hard-                           conditional on surviving selection.
+b candidate had failed. These are different checkpoints, not                       Every observed paired difference is positive, but each con-
+contradictory evaluations of one model.                                         trast still has p = 2/8 = 0.25: both the all-positive and all-
+   The three HATRPO candidates all fail the clean regression                    negative assignments are equally extreme. Holm correction
+after their ﬁrst light-stage training block and fall back to the                across the ﬁve comparisons [2] yields adjusted p = 1.00
+same BC checkpoint. Shared MAPPO does so in s1 and s2.                          for each. No contrast rejects at α = 0.05. This is limited
+Consequently, the retained checkpoint counts are three for                      statistical resolution, not evidence that the observed effect
+                                                                                                                                                               3
+
+
+
+                                                                    TABLE III
+                                     M EAN WHOLE - PLATOON COMPLETION ( PERCENT ) ACROSS THE COMPLETE LADDER .
+
+                       Method                        off      light easy_0 easy_a easy_b med_a med_b hard_a hard_b
+                       MAPPO                      100.00   100.00      100.00 100.00 100.00 100.00 100.00 95.14                    46.53
+                       HAPPO (no Meta)            100.00   100.00      100.00 100.00 100.00 100.00 100.00 95.83                    47.22
+                       Meta-AMS                   100.00   100.00      100.00 100.00 100.00 100.00 100.00 100.00                   93.06
+                       Shared MAPPO               100.00    59.72       43.06 45.83 37.50 38.89 35.42 25.00                         2.78
+                       HAA2C                      100.00   100.00      100.00 97.22 93.06 81.94 83.33 65.97                        27.08
+                       HATRPO                     100.00    39.58       14.58 18.75    6.25 14.58 10.42 10.42                       0.00
+Each attack cell averages three training-seed means, each obtained from three ﬁxed environment/attack seed pairs. The clean cell uses one evaluation pair per
+training seed.
+
+
+                                                                    Mean completion (%)
+                                                                                                                                                    100
+                MAPPO        100.0       100.0        100.0         100.0     100.0           100.0    100.0        95.1          46.5
+
+
+                                                                                                                                                    80
+    HAPPO (no Meta)          100.0       100.0        100.0         100.0     100.0           100.0    100.0        95.8          47.2
+
+
+
+             Meta-AMS        100.0       100.0        100.0         100.0     100.0           100.0    100.0       100.0          93.1              60
+
+
+
+
+                                                                                                                                                          %
+       Shared MAPPO          100.0        59.7         43.1         45.8          37.5        38.9      35.4        25.0          2.8
+                                                                                                                                                    40
+
+
+                HAA2C        100.0       100.0        100.0         97.2          93.1        81.9      83.3        66.0          27.1
+                                                                                                                                                    20
+
+               HATRPO        100.0        39.6         14.6         18.8          6.2         14.6      10.4        10.4          0.0
+
+                                                                                                                                                    0
+                              off         light       easy_0      easy_a     easy_b        med_a       med_b      hard_a         hard_b
+
+
+Fig. 1. Full-ladder mean completion. Each attacked cell ﬁrst averages the three evaluation pairs within each adaptation seed, then averages the three adaptation-
+seed means. Early-stopped methods retain their last accepted model.
+
+                                                                        TABLE IV
+                                                    R EALIZED TRAINING BUDGETS AND RETAINED STAGES .
+
+                                    Method                    s0 A/R     s1 A/R      s2 A/R Retained stage s0/s1/s2 BC
+                                    MAPPO                  320/280      320/280     320/280     hard_a/hard_a/hard_a         0
+                                    HAPPO (no Meta)        320/280      320/280     320/280     hard_a/hard_a/hard_a         0
+                                    Meta-AMS               320/320      320/320     320/320     hard_b/hard_b/hard_b         0
+                                    Shared MAPPO           320/280         40/0        40/0     hard_a/BC/BC                 2
+                                    HAA2C                  320/280      160/120     280/240     hard_a/easy_a/med_b          0
+                                    HATRPO                    40/0         40/0        40/0     BC/BC/BC                     3
+A: attempted updates, including rejected candidates; R: updates on the retained lineage. BC: number of runs retaining the common warm start. Each block
+uses 40 updates, 32 environments and 32 rollout steps per update. Equal per-stage caps do not imply equal realized budgets or equal wall-clock computation.
+
+
+
+sizes are zero. We therefore use “higher observed completion                             IV. T RAJECTORY AND L EARNING -C URVE E VIDENCE
+under this protocol,” not “statistically signiﬁcant superiority.”
+No favorable one-sided alternative was selected after observing                        The example in Fig. 3 is the recorded s0 hard-b rendered
+the signs.                                                                          rollout, selected by a ﬁxed rule rather than the best observed
+                                                                                    completion. Its original 70 s video and all 17,500 vehicle/time
+   The eight-assignment distribution for every contrast is in-                      rows are included. It is a one-environment rendering and
+cluded as a CSV. As a resolution calculation only, with ﬁve                         is distinct from the 16-environment numerical assessments.
+comparisons the ﬁrst Holm threshold is 0.05/5 = 0.01; 2/2n                          Individual paths and progress traces illustrate sequential traver-
+can reach it only when n ≥ 8. This is not a power calcu-                            sal of the common spatial maneuver; aggregate completion
+lation or a guarantee that eight future seeds would establish                       and safety claims come from the separate veriﬁed evaluation
+signiﬁcance. New runs would also need a ﬁxed analysis plan                          records. The ﬁnal reset discontinuity is omitted only from
+and a clear decision about independent BC initialization and                        the continuous path drawing; the raw CSV and video are
+held-out evaluation conditions.                                                     preserved.
+                                                                                                                                                                                                                            4
+
+
+
+
+                                                     Three training-seed means; bars = mean, whiskers = sample SD
+                              100
+
+
+
+                               80
+      Hard-b completion (%)
+
+
+
+
+                               60
+
+
+
+                               40
+
+
+
+                               20
+
+
+
+                                0
+
+                                            MAPPO       HAPPO (no Meta)          Meta-AMS                            Shared MAPPO                         HAA2C                             HATRPO
+
+                                      Crosses denote retention of the common BC checkpoint; error bars are not confidence intervals.
+
+
+Fig. 2. Hard-b results with all three training-seed means visible. Whiskers are sample standard deviations, not conﬁdence intervals. Crosses identify fallback
+to the common BC checkpoint; repeated fallback values must not be described as distinct successfully trained policies.
+
+
+
+                           TABLE V                                                                                              Recorded s0 / hard-b rendered rollout: five vehicles, one spatial path
+
+   E XPLORATORY PAIRED HARD - B COMPARISONS : M ETA -AMS MINUS                                                     0.00
+                                                                                                                                                                        Shared spatial reference    Vehicle 2   Vehicle 4
+                         COMPARATOR .                                                                      −0.25
+                                                                                                                                                                        Vehicle 1                   Vehicle 3   Vehicle 5
+                                                                                            World y (m)
+
+
+
+
+                                                                                                           −0.50
+                               Comparator           ∆ (pp) Exact p Holm p                                  −0.75
+
+                               MAPPO                 46.53     0.25       1.00                             −1.00
+
+                               HAPPO (no Meta)       45.83     0.25       1.00                                            −15            −10             −5              0                    5            10
+                               Shared MAPPO          90.28     0.25       1.00                                                                                    World x (m)
+
+                               HAA2C                 65.97     0.25       1.00                                     1.00
+                               HATRPO                93.06     0.25       1.00
+                                                                                                   Path progress
+
+
+
+
+                                                                                                                   0.75
+
+Two-sided exact sign-ﬂip tests enumerate all eight sign assignments of three                                       0.50
+
+matched seed differences. Five post-hoc comparisons form one Holm family.                                          0.25
+This tests the gated procedure conditional on exchangeability; it does not                                         0.00
+isolate an AMS module effect.                                                                                              0            10          20          30              40             50        60        70
+                                                                                                                                                                     Time (s)
+
+                                                                                                                   0.00
+
+                                                                                                           −0.25
+                                                                                            World y (m)
+
+
+
+
+   V. PAPER I NTEGRATION AND R EMAINING E VIDENCE                                                          −0.50
+
+                    B OUNDARIES                                                                            −0.75
+
+                                                                                                           −1.00
+
+   The new six-method data support the combined imple-                                                                     0            10          20          30              40             50        60        70
+mented method under the disclosed shared-BC, shield-enabled,                                                                                                         Time (s)
+
+
+gated protocol. They do not isolate the causal interaction
+                                                                                            Fig. 3. Recorded ﬁve-vehicle maneuver in the representative s0 hard-
+of Meta and AMS: the six rows include different sharing                                     b rendering. The spatial reference and each vehicle’s own path progress
+and update choices. A matched 2 × 2 ablation belongs to a                                   distinguish sequential path following from imposing simultaneous lateral
+separate cohort and must not be silently merged with this one.                              positions. This illustrative rollout is not an additional independent evaluation
+                                                                                            seed.
+Likewise, BC/KL retention is enabled across this comparison
+and there is no contemporaneous no-retention control; this
+matrix alone cannot establish a causal retention beneﬁt or a
+guarantee against forgetting.                                                                  For the main manuscript, the new results should update
+   The experiment uses one simulator scenario, ﬁxed evalu-                                  the abstract, contribution/result statements, full-ladder tables,
+ation pairs, one BC ﬁt and only three adaptation seeds. Its                                 six-method comparison, limitations and conclusion together.
+clean and attack thresholds were not relaxed, but evaluation-                               The old 75% single-chain ﬁgure and the separate 90.28%
+conditioned selection limits a held-out robustness interpreta-                              repaired-continuation average must retain their original cohort
+tion. Zero observed safety violations are empirical outcomes                                labels if discussed. The main manuscript’s AMS equations,
+under the active shield, not a formal safety guarantee or a                                 projection deﬁnition and smoothness assumptions require their
+validation of Proposition 1.                                                                own code/formula audit and are not repaired by changing
+                                                                                                                                                          5
+
+
+
+
+                                             light       easy_0         easy_a       easy_b       med_a         med_b     hard_a           hard_b
+                                  0.42
+                                               s0         s1       s2
+    Recorded environment reward
+
+                                  0.41
+
+                                  0.40
+
+                                  0.39
+
+                                  0.38
+
+                                  0.37
+
+                                  0.36
+
+                                  0.35
+
+
+                                         0              50              100               150             200           250                 300
+                                                                                 Cumulative attempted updates
+
+
+Fig. 4. Recorded Meta-AMS environment rewards for the three adaptation seeds. Thin curves are update samples; thick curves are ﬁve-update rolling means
+computed separately within each stage. Attack budgets change at stage boundaries, so the trace is descriptive and does not represent one stationary learning
+objective.
+
+
+
+the experimental tables. An accompanying Chinese integration
+note lists the speciﬁc source locations.
+
+                                               VI. R EPRODUCIBILITY
+   The package contains portable per-evaluation metrics, per-
+stage training budgets, all selected checkpoint identities, exact
+permutation distributions, generated LaTeX tables, PDF/PNG
+ﬁgures, the campaign’s hash-veriﬁed source snapshot, and
+the representative original video. All 450 original evaluation
+summaries and veriﬁcation manifests are included. The much
+larger complete per-step CSVs, all 162 videos and checkpoints
+remain at the server paths recorded in the input manifest; this
+supplement is not a replacement for that full raw archive.
+Rebuild the numerical tables and plots with:
+python scripts/build_ackermann_paper_results.py
+-output . -rebuild
+   The data originate from the recorded completed queue. No
+new training or simulation was run for this supplement. The
+ﬁnal systemd timeout ﬂag occurred during cleanup of a teleme-
+try subprocess after the main process had exited successfully;
+independent artifact checks veriﬁed the completed results.
+
+                                                     R EFERENCES
+[1] SciPy Developers, “scipy.stats.permutation_test: paired sample
+    permutations and exact tests,” SciPy online reference documentation,
+    accessed 2 November 2026. The report uses its own fully enumerated
+    implementation. [Online]. Available: https://docs.scipy.org/doc/scipy/
+    reference/generated/scipy.stats.permutation_test.html
+[2] statsmodels Developers, “statsmodels.stats.multitest.multipletests: Holm
+    step-down correction,” statsmodels online reference documentation,
+    accessed 2 November 2026. The report explicitly implements the step-
+    down adjusted p-values. [Online]. Available: https://www.statsmodels.
+    org/stable/generated/statsmodels.stats.multitest.multipletests.html
+

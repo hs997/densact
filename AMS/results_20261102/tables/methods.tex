@@ -1,0 +1,21 @@
+\begin{table}[t]
+\centering
+\caption{Method switches in the executed repository implementations.}
+\label{tab:methods}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrrl}
+\toprule
+Method & Meta & AMS & Factor & Shared & Update \\
+\midrule
+MAPPO & 0 & 0 & 0 & 0 & PPO \\
+HAPPO (no Meta) & 0 & 0 & 1 & 0 & PPO \\
+Meta-AMS & 1 & 1 & 1 & 1 & PPO \\
+Shared MAPPO & 0 & 0 & 0 & 1 & PPO \\
+HAA2C & 0 & 0 & 1 & 1 & A2C \\
+HATRPO & 0 & 0 & 1 & 1 & TRPO \\
+\bottomrule
+\end{tabular}
+
+\vspace{2pt}\begin{minipage}{\linewidth}\footnotesize These are the repository implementations selected by the recorded flags, not a claim of unmodified external HARL code. Architecture/sharing differs between some rows.\end{minipage}
+\end{table}

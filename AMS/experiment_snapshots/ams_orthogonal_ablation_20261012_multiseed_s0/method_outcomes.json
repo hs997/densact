@@ -1,0 +1,20 @@
+{
+  "happo_base_shared": {
+    "status": "stopped_at_gate",
+    "stopped_level": "hard_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-12_16-51-29_ams_orthogonal_ablation_20261012_multiseed_s0_happo_base_shared_hard_a_r1_happo_base_shared/model_final.pt",
+    "checkpoint_sha256": "2632b9992b700b03fbdd03f579a1ff874f960f24264b15d0535c9b5bf484945a"
+  },
+  "happo_meta": {
+    "status": "stopped_at_gate",
+    "stopped_level": "hard_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-13_01-50-53_ams_orthogonal_ablation_20261012_multiseed_s0_happo_meta_hard_a_r1_happo_meta/model_final.pt",
+    "checkpoint_sha256": "6f5a3e298bdcb55d416e9ac84dbb6d80f91a907972b86c5a7e0fc88aa4e9a455"
+  },
+  "happo_ams_only": {
+    "status": "stopped_at_gate",
+    "stopped_level": "hard_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-13_10-45-16_ams_orthogonal_ablation_20261012_multiseed_s0_happo_ams_only_hard_a_r1_happo_ams_only/model_final.pt",
+    "checkpoint_sha256": "50ad48ac06ad524f2e84b8de272458c31da20fc73f3e72f752d9c669cf0ed654"
+  }
+}

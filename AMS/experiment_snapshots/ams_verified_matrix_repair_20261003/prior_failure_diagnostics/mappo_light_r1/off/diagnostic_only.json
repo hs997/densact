@@ -1,0 +1,19 @@
+{
+  "diagnostic_only": true,
+  "attacks_unlocked": false,
+  "gate_passed": false,
+  "observed_clean_passed": false,
+  "metrics": {
+    "completion": 0.0,
+    "instant": 0.0,
+    "dwell": 0.0,
+    "collision": 0.0,
+    "road_any": 0.0,
+    "road_termination": 0.0,
+    "name": "clean_env42",
+    "attack_enabled": 0,
+    "checkpoint_sha256": "9e544c015f823561e347129b36f80a1f4b1ef640bff76b1e289e9d9a3d507ea4",
+    "env_seed": 42,
+    "attack_seed": 3407
+  }
+}

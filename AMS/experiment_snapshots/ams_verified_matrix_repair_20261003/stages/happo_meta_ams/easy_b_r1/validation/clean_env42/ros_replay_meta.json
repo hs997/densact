@@ -1,0 +1,22 @@
+{
+  "act_dim": 2,
+  "action_scale": 1.0,
+  "attack_level": "off",
+  "attack_max_dos_rate": 0.0,
+  "attack_max_fdi_acc": 0.0,
+  "attack_max_fdi_pos": 0.0,
+  "attack_mode": "profile",
+  "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-04_15-31-11_ams_verified_matrix_repair_20261003_happo_meta_ams_easy_b_r1_happo_meta_ams/model_final.pt",
+  "d_drop": 1.5,
+  "dt": 0.02,
+  "enforce_road_boundaries": true,
+  "happo_action_clip": 0.4,
+  "lane_change_length_m": 6.0,
+  "lane_change_spatial": true,
+  "lane_change_start_x": -7.75,
+  "lane_end_y": -1.16,
+  "lane_start_y": -0.065,
+  "num_agents": 5,
+  "obs_dim": 11,
+  "task": "Isaac-Marl-Platoon-HAPPO-v0"
+}

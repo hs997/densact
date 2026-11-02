@@ -1,0 +1,17 @@
+{
+  "files": {
+    "/home/cnc/Desktop/AMS/ams_paper.tex": {
+      "sha256": "36e6f7831e5c38bc44bb5fb1b053b72c7d1c3bbd30a55b6ba54e3b61265e3904",
+      "bytes": 34449
+    },
+    "/home/cnc/Desktop/AMS/ams_paper.pdf": {
+      "sha256": "353eb13a80df10b47b5cfd89fa79602385e74ec1e1e8d9e4d426c2af5e159140",
+      "bytes": 1710895
+    },
+    "/home/cnc/Desktop/AMS.zip": {
+      "sha256": "e1b7c8ed52e3689249969a5802698d370821fe6ac74b96b72c1143bb5258c59b",
+      "bytes": 83383424
+    }
+  },
+  "warning": "The original PDF and same-name TeX differ in content. Line references in PAPER_INTEGRATION_zh.txt refer only to that TeX. Both originals are preserved."
+}

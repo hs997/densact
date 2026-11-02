@@ -1,0 +1,21 @@
+{
+  "time": "2026-10-13T13:38:29.403681",
+  "state": "waiting_for_exclusive_gpu",
+  "pending": {
+    "time": "2026-10-13T12:48:51.986244",
+    "state": "evaluating",
+    "algorithm": "happo_ams_only",
+    "level": "easy_0",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-13_10-45-16_ams_orthogonal_ablation_20261012_multiseed_s0_happo_ams_only_hard_a_r1_happo_ams_only/model_final.pt",
+    "env_seed": 777,
+    "attack_seed": 17011,
+    "output": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/ams_orthogonal_ablation_20261012_multiseed_s0/final_ladders/happo_ams_only/easy_0/validation/attack_env777_seed17011"
+  },
+  "conflicts": [
+    {
+      "pid": 954790,
+      "command": "/home/cnc/SSD_1T/xzw/isaac-sim/kit/python/bin/python3 /home/cnc/SSD_1T/xzw/IsaacLab-cagan-redesign/scripts/reinforcement_learning/rsl_rl/train.py --task Isaac-Marl-Platoon-HAPPO-v0 --num_envs 64 --headless --seed 141127 --run_name e1_corrected_teacher_off_s141127_20261013_s03_medium --max_iterations 700 --kit_args=--/rtx/verifyDriverVersion/enabled=false --/app/viewport/grid/enabled=false --/app/viewport/defaults/guide/grid/visible=false --device cuda:0 --resume --load_run 2026-10-13_13-12-45_e1_corrected_teacher_off_s141127_20261013_s02_easy --checkpoint model_final.pt env.algorithm.num_vehicles=5 env.algorithm.num_policy_agents=4 env.algorithm.enable_teacher=true env.algorithm.enable_shield=true env.algorithm.happo_action_clip=0.4 env.algorithm.policy_action_dim=1 env.algorithm.leader_reference_feedforward_gain=1.1 env.algorithm.leader_reference_feedback_gain=0.0 env.algorithm.leader_reference_action_clip=0.8 env.algorithm.leader_reference_soft_start_steps=80 env.algorithm.attack_curriculum_warmup_updates=0 env.algorithm.attack_curriculum_start_mode=cagan env.algorithm.attack_update_interval=1 env.algorithm.attack_generator_lr=5.0e-5 env.algorithm.attack_discriminator_lr=5.0e-5 env.algorithm.attack_max_grad_norm=1.0 env.algorithm.attack_objective_ema_tau=0.97 env.algorithm.attack_normalized_objective_clip=2.0 env.algorithm.attack_max_consecutive_drops=3 env.algorithm.attack_decay_start_updates=0 env.algorithm.stability_gate_enabled=true env.algorithm.stability_window_size=50 env.algorithm.stability_evaluation_interval=100 env.algorithm.stability_hold_updates=100 env.algorithm.stability_max_holds_per_stage=3 env.algorithm.stability_max_bad_orientation_rate=0.05 env.algorithm.stability_max_collision_rate=0.001 env.algorithm.stability_max_value_loss=10000.0 env.algorithm.stability_max_critic_grad_norm=10000.0 env.commands.base_velocity.ranges.lin_vel_x=[0.30,0.45] env.safety_shield.d_drop=1.45 env.safety_shield.catchup_action=-0.355 env.safety_shield.lateral_turn_gain=0.32 env.safety_shield.centerline_turn_gain=0.28 env.safety_shield.pair3_lateral_gain_scale=0.85 env.safety_shield.pair4_lateral_gain_scale=0.90 env.actions.joint_vel_1.scale=12.5 env.actions.joint_vel_2.scale=12.5 env.actions.joint_vel_3.scale=12.5 env.actions.joint_vel_4.scale=12.5 env.actions.joint_vel_5.scale=12.5 env.algorithm.enable_attack=true env.algorithm.attack_level=medium env.algorithm.attack_mode=cagan env.algorithm.attack_target_mode=all env.algorithm.attack_seed=241127 env.algorithm.max_fdi_pos=2.0 env.algorithm.max_fdi_acc=0.5 env.algorithm.max_dos_rate=0.1 env.algorithm.attacker_every_student_updates=12 env.algorithm.attack_start_fdi_pos=1.25 env.algorithm.attack_start_fdi_acc=0.25 env.algorithm.attack_start_dos_rate=0.05 env.algorithm.attack_budget_ramp_start_updates=1400 env.algorithm.attack_budget_ramp_end_updates=1750 env.algorithm.stability_stage_id=medium env.algorithm.stability_stage_start_update=1400 env.algorithm.stability_stage_end_update=2100 env.algorithm.enable_teacher=false env.algorithm.reward_protocol=attacked_measurement_v2 env.algorithm.local_reward_shaping=false env.algorithm.measurement_reward_scale=1e-6 env.algorithm.teacher_action_penalty_coef=0.0"
+    }
+  ],
+  "log": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/ams_orthogonal_ablation_20261012_multiseed_s0/final_ladders/happo_ams_only/easy_0/validation/attack_env777_seed17011_validator.log"
+}

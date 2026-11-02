@@ -1,0 +1,21 @@
+\begin{table*}[t]
+\centering
+\caption{Mean whole-platoon completion (percent) across the complete ladder.}
+\label{tab:ladder}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrrrrrrr}
+\toprule
+Method & off & light & easy\_0 & easy\_a & easy\_b & med\_a & med\_b & hard\_a & hard\_b \\
+\midrule
+MAPPO & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 95.14 & 46.53 \\
+HAPPO (no Meta) & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 95.83 & 47.22 \\
+Meta-AMS & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 100.00 & 93.06 \\
+Shared MAPPO & 100.00 & 59.72 & 43.06 & 45.83 & 37.50 & 38.89 & 35.42 & 25.00 & 2.78 \\
+HAA2C & 100.00 & 100.00 & 100.00 & 97.22 & 93.06 & 81.94 & 83.33 & 65.97 & 27.08 \\
+HATRPO & 100.00 & 39.58 & 14.58 & 18.75 & 6.25 & 14.58 & 10.42 & 10.42 & 0.00 \\
+\bottomrule
+\end{tabular}
+
+\vspace{2pt}\begin{minipage}{\linewidth}\footnotesize Each attack cell averages three training-seed means, each obtained from three fixed environment/attack seed pairs. The clean cell uses one evaluation pair per training seed.\end{minipage}
+\end{table*}

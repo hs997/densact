@@ -1,0 +1,190 @@
+seed: 42
+device: cuda:0
+num_steps_per_env: 32
+max_iterations: 40
+empirical_normalization: true
+obs_groups: {}
+clip_actions: null
+save_interval: 50
+experiment_name: platoon_happo
+run_name: ams_orthogonal_ablation_20261012_multiseed_s0_happo_ams_only_hard_a_r1_happo_ams_only
+logger: tensorboard
+neptune_project: isaaclab
+wandb_project: isaaclab
+resume: true
+load_run: ams_orthogonal_ablation_20261012_multiseed_s0_seed_happo_ams_only
+load_checkpoint: model_final.pt
+class_name: OnPolicyRunner
+policy:
+  class_name: ActorCritic
+  init_noise_std: 1.0
+  noise_std_type: scalar
+  state_dependent_std: false
+  actor_obs_normalization: {}
+  critic_obs_normalization: {}
+  actor_hidden_dims:
+  - 512
+  - 256
+  - 128
+  critic_hidden_dims:
+  - 512
+  - 256
+  - 128
+  activation: elu
+algorithm:
+  class_name: PPO
+  num_learning_epochs: 5
+  num_mini_batches: 4
+  learning_rate: 0.0003
+  schedule: adaptive
+  gamma: 0.99
+  lam: 0.95
+  entropy_coef: 0.01
+  desired_kl: 0.01
+  max_grad_norm: 1.0
+  value_loss_coef: 2.0
+  use_clipped_value_loss: true
+  clip_param: 0.2
+  normalize_advantage_per_mini_batch: false
+  rnd_cfg: null
+  symmetry_cfg: null
+platoon:
+  algorithm: happo
+  method_variant: legacy
+  spatial_path_features: false
+  num_agents: 5
+  enable_teacher: false
+  enable_attack: false
+  enable_shield: false
+  use_happo_layout: true
+  use_happo_actions: true
+  happo_log_interval: 32
+  happo_log_level: basic
+  freeze_outer_ppo: true
+  happo_use_factor: true
+  happo_share_actor: false
+  happo_actor_update_mode: ppo
+  happo_trpo_kl_threshold: 0.01
+  happo_trpo_cg_iters: 10
+  happo_trpo_damping: 0.1
+  happo_trpo_line_search_steps: 10
+  happo_trpo_accept_ratio: 0.5
+  happo_trpo_backtrack_coeff: 0.8
+  happo_actor_lr: 1.0e-05
+  happo_critic_lr: 1.0e-05
+  happo_clip_param: 0.05
+  happo_ppo_epoch: 1
+  happo_num_mini_batches: 16
+  happo_factor_chunk_size: 4096
+  happo_max_grad_norm: 0.05
+  happo_entropy_coef: 0.0
+  happo_init_noise_std: 0.25
+  happo_log_std_min: -2.995732273553991
+  happo_log_std_max: -1.0498221244986778
+  happo_action_clip: 0.4
+  happo_action_warmup_updates: 0
+  happo_bad_heading_action_scale: 0.2
+  happo_ams_enabled: false
+  happo_ams_lr: 0.0001
+  happo_ams_tau: 0.01
+  happo_ams_num_neighbors: 8
+  happo_ams_neighborhood_radius: 0.25
+  happo_ams_refresh_every: 1000
+  happo_ams_huber_beta: 0.3
+  happo_ams_q_epochs: 1
+  happo_ams_num_mini_batches: 16
+  happo_ams_max_grad_norm: 0.5
+  happo_ams_target_clip: 100.0
+  happo_ams_eval_chunk_size: 8192
+  happo_ams_geometry: ackermann
+  happo_ams_wheelbase_m: 0.14325
+  happo_ams_max_speed_mps: 1.2
+  happo_ams_max_steering_rad: 0.32
+  happo_ams_curvature_limit: 3.0
+  happo_ams_risk_coef: 0.0
+  happo_ams_use_executed_action: true
+  use_executed_action_trace: true
+  happo_ams_advantage_weight: 0.1
+  happo_ams_warmup_updates: 50
+  happo_ams_ramp_updates: 100
+  happo_retention_enabled: false
+  happo_retention_trajectory_path: ''
+  happo_retention_bc_coef: 0.0
+  happo_retention_kl_coef: 0.0
+  happo_retention_batch_size: 512
+  happo_retention_schedule_enabled: false
+  happo_retention_warmup_updates: 0
+  happo_retention_decay_updates: 200
+  happo_retention_bc_start_coef: 0.0
+  happo_retention_bc_end_coef: 0.0
+  happo_retention_kl_start_coef: 0.0
+  happo_retention_kl_end_coef: 0.0
+  retention_curriculum_enabled: false
+  retention_acquisition_updates: 0
+  retention_expert_decay_updates: 0
+  retention_attack_adaptation_updates: 0
+  retention_expert_start_ratio: 1.0
+  retention_expert_end_ratio: 0.0
+  retention_clean_fraction_start: 1.0
+  retention_clean_fraction_end: 0.0
+  local_reward_shaping: true
+  local_reward_centerline_coef: 0.35
+  local_reward_pair_lateral_coef: 0.55
+  local_reward_heading_coef: 0.15
+  local_reward_turn_coef: 0.005
+  local_reward_first_follower_centerline_scale: 1.0
+  local_reward_first_follower_pair_lateral_scale: 1.0
+  local_reward_first_follower_turn_scale: 1.0
+  local_reward_last_follower_centerline_scale: 1.0
+  local_reward_last_follower_pair_lateral_scale: 1.0
+  local_reward_last_follower_turn_scale: 1.0
+  teacher_shaping_coef: 0.02
+  teacher_lr: 0.0003
+  teacher_update_interval: 1
+  teacher_every_student_updates: 2
+  teacher_shaping_clip: 0.2
+  teacher_action_penalty_coef: 0.001
+  teacher_reward_ema_tau: 0.95
+  teacher_consistency_coef: 0.03
+  teacher_outer_delta_coef: 0.08
+  teacher_outer_delta_warmup_updates: 5
+  teacher_outer_delta_ramp_updates: 20
+  teacher_lambda_spacing: 1.0
+  teacher_lambda_velocity: 0.5
+  teacher_lambda_acceleration: 0.25
+  teacher_lambda_jerk: 0.1
+  teacher_lambda_overspeed: 0.25
+  teacher_lambda_centerline: 1.0
+  teacher_lambda_lateral: 0.5
+  teacher_lambda_heading: 2.0
+  teacher_lambda_backward: 1.0
+  teacher_lambda_forward_deficit: 0.5
+  teacher_lambda_collision: 10.0
+  teacher_lambda_action_energy: 0.02
+  attack_level: 'off'
+  attack_target_mode: all
+  attack_seed: 3407
+  attack_log_interval_updates: 20
+  attack_mode: profile
+  attack_noise_dim: 16
+  attack_hidden_dim: 128
+  attack_realism_coef: 0.1
+  attack_generator_lr: 0.0001
+  attack_discriminator_lr: 0.0001
+  attack_update_interval: 32
+  attack_curriculum_warmup_updates: 2000
+  attack_curriculum_start_mode: profile
+  attack_decay_start_updates: 5000
+  attack_min_obj_scale: 0.25
+  attack_min_update_freq_scale: 0.25
+  attack_decay_half_life_updates: 2500
+  attack_clean_env_fraction: 0.0
+  attack_strength_start_scale: 1.0
+  attack_strength_ramp_updates: 0
+  action_fdi_longitudinal_only: true
+  attack_obj_coef: 1.2
+  attack_reward_proxy_coef: 1.0
+  attack_dos_proxy_coef: 0.3
+  max_fdi_pos: -1.0
+  max_fdi_acc: -1.0
+  max_dos_rate: -1.0

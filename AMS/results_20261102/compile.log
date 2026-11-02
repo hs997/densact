@@ -1,0 +1,23 @@
+note: Running TeX ...
+note: downloading t1lmr.fd
+note: downloading ec-lmr10.tfm
+warning: ams_results_20261102.tex:21: Underfull \hbox (badness 10000) in paragraph at lines 20--21
+warning: ams_results_20261102.tex:21: Underfull \hbox (badness 10000) in paragraph at lines 20--21
+warning: ams_results_20261102.tex:21: Underfull \hbox (badness 4120) in paragraph at lines 20--21
+warning: ams_results_20261102.tex:94: Underfull \vbox (badness 10000) has occurred while \output is active
+warning: ams_results_20261102.tex:115: Underfull \vbox (badness 8056) has occurred while \output is active
+note: Running BibTeX on ams_results_20261102.aux ...
+note: Rerunning TeX because bibtex was run ...
+warning: ams_results_20261102.tex:21: Underfull \hbox (badness 10000) in paragraph at lines 20--21
+warning: ams_results_20261102.tex:21: Underfull \hbox (badness 10000) in paragraph at lines 20--21
+warning: ams_results_20261102.tex:21: Underfull \hbox (badness 4120) in paragraph at lines 20--21
+warning: ams_results_20261102.tex:94: Underfull \vbox (badness 10000) has occurred while \output is active
+warning: ams_results_20261102.tex:115: Underfull \vbox (badness 8056) has occurred while \output is active
+warning: warnings were issued by the TeX engine; use --print and/or --keep-logs for details.
+note: Running xdvipdfmx ...
+note: Writing `ams_results_20261102.blg` (415 B)
+note: Writing `ams_results_20261102.pdf` (316.49609375 KiB)
+note: Writing `ams_results_20261102.log` (16.408203125 KiB)
+note: Writing `ams_results_20261102.aux` (6.6787109375 KiB)
+note: Writing `ams_results_20261102.bbl` (1.708984375 KiB)
+note: Writing `ams_results_20261102.out` (2.62890625 KiB)

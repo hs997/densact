@@ -1,0 +1,53 @@
+AMS PACKAGE MANIFEST
+====================
+
+Local manuscript package
+------------------------
+ams_paper.tex                         IEEE-style manuscript draft
+references/ams.bib                    BibTeX database
+figures/                              Copied manuscript figures
+README.md                             Build instructions and scope
+DATA_PROVENANCE.md                    Artifact sources and statistical caveats
+GPT_HANDOFF.md                        Read-first handoff for another GPT/Codex
+CODE_LOGIC.md                         Source architecture and data flow
+THEORY_WRITING_GUIDE.md               Theory notation and claim boundaries
+EXPERIMENT_HANDOFF.md                 Metrics, matrices, stages, and commands
+SUPPLEMENTAL_EVIDENCE_PLAN.md         Missing evidence, protocol caveats, and required follow-up runs
+PACKAGE_SCOPE.md                      Included/excluded files and portability warning
+
+External runnable source tree
+-----------------------------
+/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/ackermann_action.py
+/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/trajectory.py
+/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/algorithms/happo/ams.py
+/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/algorithms/happo/runner.py
+/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/algorithms/teacher.py
+/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/algorithms/router.py
+/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/tasks/platoon/config.py
+/home/cnc/SSD_1T/xzw/IsaacLab-main/scripts/tools/run_ackermann_verified_followup.py
+/home/cnc/SSD_1T/xzw/IsaacLab-main/scripts/tools/run_ackermann_orthogonal_multiseed.sh
+/home/cnc/SSD_1T/xzw/IsaacLab-main/scripts/tools/run_medium_algorithm_comparison.sh
+/home/cnc/SSD_1T/xzw/IsaacLab-main/scripts/tools/ackermann_validation.py
+
+External evidence roots
+-----------------------
+/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/ams_verified_matrix_repair_20261003
+/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/ams_orthogonal_ablation_20261009_v3
+/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/ams_orthogonal_ablation_20261012_multiseed_s0
+/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/ams_orthogonal_ablation_20261012_multiseed_s1
+/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/ams_orthogonal_ablation_20261012_multiseed_s2
+/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_expert_smoke/evidence
+/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_bc_warmstart/real_trajectory_bc/model_bc.pt
+
+Portable snapshots inside this package
+--------------------------------------
+source_snapshot/                      Read-only copies of AMS-relevant Python modules
+scripts_snapshot/                     Read-only copies of launchers and validation tests
+experiment_snapshots/                  Compact CSV/JSON/YAML/runs.txt evidence snapshots
+evidence_snapshot/                     BC checkpoint, Ackermann expert evidence, and Meta-AMS hard-b evidence
+reference_material/                    MGRS reference PDF and official AMS ICML 2026 PDF
+project_notes/                         Copy of the full AMS debug log at packaging time
+
+The zip intentionally excludes the Isaac Lab checkout, simulator, USD/assets, Python
+environment, most checkpoints, and redundant multi-gigabyte raw logs. Copy those
+separately if the second workstation must rerun experiments.

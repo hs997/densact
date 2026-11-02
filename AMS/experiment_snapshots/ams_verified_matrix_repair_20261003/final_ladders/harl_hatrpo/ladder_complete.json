@@ -1,0 +1,4 @@
+{
+  "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_bc_warmstart/real_trajectory_bc/model_bc.pt",
+  "checkpoint_sha256": "6b8c15acf17b7e250a65fc85609c304ba2cc14f8d0a65d8f34b4188f6e801615"
+}

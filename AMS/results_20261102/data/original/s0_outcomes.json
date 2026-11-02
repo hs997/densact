@@ -1,0 +1,38 @@
+{
+  "mappo": {
+    "status": "stopped_at_gate",
+    "stopped_level": "hard_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-28_07-29-26_ackermann_completion_20261027_s0_mappo_hard_a_r1_mappo/model_final.pt",
+    "checkpoint_sha256": "36e2b4de6c273d2f1a8f87757e7fc57eec9d4e028d0298a56da49e0bef35f55c"
+  },
+  "happo_no_meta": {
+    "status": "stopped_at_gate",
+    "stopped_level": "hard_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-28_15-37-11_ackermann_completion_20261027_s0_happo_no_meta_hard_a_r1_happo_no_meta/model_final.pt",
+    "checkpoint_sha256": "617d93c4ef6683b4c4c03e6b50250528ecc324eab09c81a6de8f56ed6e46db00"
+  },
+  "happo_meta_ams": {
+    "status": "passed_hard_b",
+    "stopped_level": null,
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-29_00-17-09_ackermann_completion_20261027_s0_happo_meta_ams_hard_b_r1_happo_meta_ams/model_final.pt",
+    "checkpoint_sha256": "7956bb7960862b12cd26808cf4c526e5b85fe6dcb2779355cf502ff2ef234026"
+  },
+  "harl_mappo_shared": {
+    "status": "stopped_at_gate",
+    "stopped_level": "hard_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-29_07-43-39_ackermann_completion_20261027_s0_harl_mappo_shared_hard_a_r1_harl_mappo_shared/model_final.pt",
+    "checkpoint_sha256": "a43e7f5fac42b07d415e11d332cc55b871cc9af0138f765fd2c7939c689a2587"
+  },
+  "harl_haa2c": {
+    "status": "stopped_at_gate",
+    "stopped_level": "hard_b",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-29_15-49-53_ackermann_completion_20261027_s0_harl_haa2c_hard_a_r1_harl_haa2c/model_final.pt",
+    "checkpoint_sha256": "97001736ef1ae31aaafd05a04547847317bc2b4b5368fd2a97d4002ebf1e6ac6"
+  },
+  "harl_hatrpo": {
+    "status": "stopped_at_gate",
+    "stopped_level": "light",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_bc_warmstart/real_trajectory_bc/model_bc.pt",
+    "checkpoint_sha256": "6b8c15acf17b7e250a65fc85609c304ba2cc14f8d0a65d8f34b4188f6e801615"
+  }
+}

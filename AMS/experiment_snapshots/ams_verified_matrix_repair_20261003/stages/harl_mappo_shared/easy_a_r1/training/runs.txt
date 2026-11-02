@@ -1,0 +1,1 @@
+harl_mappo_shared=/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-05_00-09-00_ams_verified_matrix_repair_20261003_harl_mappo_shared_easy_a_r1_harl_mappo_shared

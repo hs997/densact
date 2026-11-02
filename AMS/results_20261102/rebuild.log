@@ -1,0 +1,75 @@
+{
+  "output": "/home/cnc/Desktop/AMS/results_20261102",
+  "comparisons": [
+    {
+      "comparator": "mappo",
+      "matched_training_seeds": 3,
+      "mean_difference_pp": 46.52777777777777,
+      "difference_sample_sd_pp": 1.2028130608117218,
+      "difference_s0_pp": 45.83333333333333,
+      "difference_s1_pp": 45.83333333333333,
+      "difference_s2_pp": 47.916666666666664,
+      "exact_two_sided_p": 0.25,
+      "all_pairs_positive": true,
+      "permutations": 8,
+      "holm_adjusted_p": 1.0,
+      "reject_at_0_05": false
+    },
+    {
+      "comparator": "happo_no_meta",
+      "matched_training_seeds": 3,
+      "mean_difference_pp": 45.83333333333333,
+      "difference_sample_sd_pp": 7.511565157216642,
+      "difference_s0_pp": 37.5,
+      "difference_s1_pp": 52.08333333333333,
+      "difference_s2_pp": 47.916666666666664,
+      "exact_two_sided_p": 0.25,
+      "all_pairs_positive": true,
+      "permutations": 8,
+      "holm_adjusted_p": 1.0,
+      "reject_at_0_05": false
+    },
+    {
+      "comparator": "harl_mappo_shared",
+      "matched_training_seeds": 3,
+      "mean_difference_pp": 90.27777777777777,
+      "difference_sample_sd_pp": 4.336804165554447,
+      "difference_s0_pp": 85.41666666666666,
+      "difference_s1_pp": 93.75,
+      "difference_s2_pp": 91.66666666666666,
+      "exact_two_sided_p": 0.25,
+      "all_pairs_positive": true,
+      "permutations": 8,
+      "holm_adjusted_p": 1.0,
+      "reject_at_0_05": false
+    },
+    {
+      "comparator": "harl_haa2c",
+      "matched_training_seeds": 3,
+      "mean_difference_pp": 65.97222222222223,
+      "difference_sample_sd_pp": 20.234447617129817,
+      "difference_s0_pp": 43.75,
+      "difference_s1_pp": 83.33333333333334,
+      "difference_s2_pp": 70.83333333333333,
+      "exact_two_sided_p": 0.25,
+      "all_pairs_positive": true,
+      "permutations": 8,
+      "holm_adjusted_p": 1.0,
+      "reject_at_0_05": false
+    },
+    {
+      "comparator": "harl_hatrpo",
+      "matched_training_seeds": 3,
+      "mean_difference_pp": 93.05555555555556,
+      "difference_sample_sd_pp": 1.2028130608117258,
+      "difference_s0_pp": 93.75,
+      "difference_s1_pp": 93.75,
+      "difference_s2_pp": 91.66666666666666,
+      "exact_two_sided_p": 0.25,
+      "all_pairs_positive": true,
+      "permutations": 8,
+      "holm_adjusted_p": 1.0,
+      "reject_at_0_05": false
+    }
+  ]
+}

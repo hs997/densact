@@ -1,0 +1,63 @@
+{
+  "passed": true,
+  "threshold": 0.5,
+  "clean_ok": true,
+  "safe": true,
+  "attack_ok": true,
+  "attack_completion_min": 0.9375,
+  "attack_completion_mean": 0.9583333333333334,
+  "rows": [
+    {
+      "completion": 1.0,
+      "instant": 1.0,
+      "dwell": 1.0,
+      "collision": 0.0,
+      "road_any": 0.0,
+      "road_termination": 0.0,
+      "name": "clean_env42",
+      "attack_enabled": 0,
+      "checkpoint_sha256": "5ecdfcd94af87423f7e32aac3f6bc57968d6cd576750a04dd7b1fbb03499dc4b",
+      "env_seed": 42,
+      "attack_seed": 3407
+    },
+    {
+      "completion": 1.0,
+      "instant": 1.0,
+      "dwell": 0.875,
+      "collision": 0.0,
+      "road_any": 0.0,
+      "road_termination": 0.0,
+      "name": "attack_env42_seed3407",
+      "attack_enabled": 1,
+      "checkpoint_sha256": "5ecdfcd94af87423f7e32aac3f6bc57968d6cd576750a04dd7b1fbb03499dc4b",
+      "env_seed": 42,
+      "attack_seed": 3407
+    },
+    {
+      "completion": 0.9375,
+      "instant": 1.0,
+      "dwell": 0.875,
+      "collision": 0.0,
+      "road_any": 0.0,
+      "road_termination": 0.0,
+      "name": "attack_env3407_seed9917",
+      "attack_enabled": 1,
+      "checkpoint_sha256": "5ecdfcd94af87423f7e32aac3f6bc57968d6cd576750a04dd7b1fbb03499dc4b",
+      "env_seed": 3407,
+      "attack_seed": 9917
+    },
+    {
+      "completion": 0.9375,
+      "instant": 0.9375,
+      "dwell": 0.8125,
+      "collision": 0.0,
+      "road_any": 0.0,
+      "road_termination": 0.0,
+      "name": "attack_env777_seed17011",
+      "attack_enabled": 1,
+      "checkpoint_sha256": "5ecdfcd94af87423f7e32aac3f6bc57968d6cd576750a04dd7b1fbb03499dc4b",
+      "env_seed": 777,
+      "attack_seed": 17011
+    }
+  ]
+}

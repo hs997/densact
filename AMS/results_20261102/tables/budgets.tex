@@ -1,0 +1,21 @@
+\begin{table*}[t]
+\centering
+\caption{Realized training budgets and retained stages.}
+\label{tab:budget}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrlr}
+\toprule
+Method & s0 A/R & s1 A/R & s2 A/R & Retained stage s0/s1/s2 & BC \\
+\midrule
+MAPPO & 320/280 & 320/280 & 320/280 & hard\_a/hard\_a/hard\_a & 0 \\
+HAPPO (no Meta) & 320/280 & 320/280 & 320/280 & hard\_a/hard\_a/hard\_a & 0 \\
+Meta-AMS & 320/320 & 320/320 & 320/320 & hard\_b/hard\_b/hard\_b & 0 \\
+Shared MAPPO & 320/280 & 40/0 & 40/0 & hard\_a/BC/BC & 2 \\
+HAA2C & 320/280 & 160/120 & 280/240 & hard\_a/easy\_a/med\_b & 0 \\
+HATRPO & 40/0 & 40/0 & 40/0 & BC/BC/BC & 3 \\
+\bottomrule
+\end{tabular}
+
+\vspace{2pt}\begin{minipage}{\linewidth}\footnotesize A: attempted updates, including rejected candidates; R: updates on the retained lineage. BC: number of runs retaining the common warm start. Each block uses 40 updates, 32 environments and 32 rollout steps per update. Equal per-stage caps do not imply equal realized budgets or equal wall-clock computation.\end{minipage}
+\end{table*}

@@ -1,0 +1,570 @@
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: /home/cnc/SSD_1T/xzw/IsaacLab-main/apps/isaaclab.python.headless.kit
+[INFO]: Parsing configuration from: <class 'marl_platoon.tasks.PlatoonHAPPOEnvCfg'>
+[INFO]: Parsing configuration from: <class 'marl_platoon.tasks.platoon.agents.PlatoonHAPPORunnerCfg'>
+
+[36m======================================================================================[0m
+[36m[1m[INFO][IsaacLab]: Logging to file: /tmp/isaaclab/logs/isaaclab_2026-10-04_21-55-30.log[0m
+[36m======================================================================================[0m
+
+[33m21:55:30 [simulation_context.py] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.[0m
+Loading user config located at: '/home/cnc/SSD_1T/xzw/isaac-sim/kit/data/Kit/Isaac-Sim/5.1/user.config.json'
+[Info] [carb] Logging to file: /home/cnc/SSD_1T/xzw/isaac-sim/kit/logs/Kit/Isaac-Sim/5.1/kit_20261004_215513.log
+2026-10-04T13:55:13Z [5ms] [Warning] [omni.ext.plugin] [ext: my_exts] Extensions config 'extension.toml' doesn't exist '/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts' or '/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/config'
+2026-10-04T13:55:14Z [514ms] [Warning] [omni.usd_config.extension] Enable omni.materialx.libs extension to use MaterialX
+2026-10-04T13:55:15Z [1,369ms] [Warning] [carb] Acquiring non optional plugin interface which is not listed as dependency: [omni::physx::IPhysxBenchmarks v1.0] (plugin: <default plugin>), by client: omni.physics.physx.plugin. Add it to CARB_PLUGIN_IMPL_DEPS() macro of a client.
+2026-10-04T13:55:15Z [1,382ms] [Warning] [omni.isaac.dynamic_control] omni.isaac.dynamic_control is deprecated as of Isaac Sim 4.5. No action is needed from end-users.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 535.53.01     | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 3080          | Yes: 0 |     | 10486   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2216      | d04b72bd.. |
+|     |                                  |        |     |            | 21        |            |
+|=============================================================================================|
+| OS: 22.04.5 LTS (Jammy Jellyfish) ubuntu, Version: 22.04.5, Kernel: 6.8.0-136-generic
+| XServer Vendor: The X.Org Foundation, XServer Version: 12101004 (1.21.1.4)
+| Processor: AMD Ryzen Threadripper 3970X 32-Core Processor
+| Cores: 32 | Logical Cores: 64
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 64167 | Free Memory: 57798
+| Total Page/Swap (MB): 2047 | Free Page/Swap: 1063
+|---------------------------------------------------------------------------------------------|
+2026-10-04T13:55:21Z [7,302ms] [Warning] [gpu.foundation.plugin] IOMMU is enabled.
+
+|---------------------------------------------------------------------------------------------|
+| Driver Version: 535.53.01     | Graphics API: Vulkan
+|=============================================================================================|
+| GPU | Name                             | Active | LDA | GPU Memory | Vendor-ID | LUID       |
+|     |                                  |        |     |            | Device-ID | UUID       |
+|     |                                  |        |     |            | Bus-ID    |            |
+|---------------------------------------------------------------------------------------------|
+| 0   | NVIDIA GeForce RTX 3080          | Yes: 0 |     | 10486   MB | 10de      | 0          |
+|     |                                  |        |     |            | 2216      | d04b72bd.. |
+|     |                                  |        |     |            | 21        |            |
+|=============================================================================================|
+| OS: 22.04.5 LTS (Jammy Jellyfish) ubuntu, Version: 22.04.5, Kernel: 6.8.0-136-generic
+| XServer Vendor: The X.Org Foundation, XServer Version: 12101004 (1.21.1.4)
+| Processor: AMD Ryzen Threadripper 3970X 32-Core Processor
+| Cores: 32 | Logical Cores: 64
+|---------------------------------------------------------------------------------------------|
+| Total Memory (MB): 64167 | Free Memory: 57543
+| Total Page/Swap (MB): 2047 | Free Page/Swap: 1063
+|---------------------------------------------------------------------------------------------|
+2026-10-04T13:55:30Z [16,608ms] [Warning] [gpu.foundation.plugin] IOMMU is enabled.
+2026-10-04T13:55:31Z [17,657ms] [Warning] [omni.graph.visualization.nodes._impl.extension] No Viewport Window to add omni.graph.visualization.nodes-2.1.3 scene to
+2026-10-04T13:55:31Z [17,821ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:31Z [17,821ms] [Warning] [isaacsim.asset.importer.urdf] link camera_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:31Z [17,821ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:31Z [17,821ms] [Warning] [isaacsim.asset.importer.urdf] link controller_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:31Z [17,821ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:31Z [17,821ms] [Warning] [isaacsim.asset.importer.urdf] link front_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:31Z [17,821ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:31Z [17,821ms] [Warning] [isaacsim.asset.importer.urdf] link laser has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:32Z [18,767ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:32Z [18,767ms] [Warning] [isaacsim.asset.importer.urdf] link camera_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:32Z [18,767ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:32Z [18,767ms] [Warning] [isaacsim.asset.importer.urdf] link controller_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:32Z [18,767ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:32Z [18,767ms] [Warning] [isaacsim.asset.importer.urdf] link front_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:32Z [18,767ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:32Z [18,767ms] [Warning] [isaacsim.asset.importer.urdf] link laser has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:33Z [19,487ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:33Z [19,487ms] [Warning] [isaacsim.asset.importer.urdf] link camera_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:33Z [19,487ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:33Z [19,487ms] [Warning] [isaacsim.asset.importer.urdf] link controller_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:33Z [19,487ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+[INFO]: Base environment:
+	Environment device    : cuda:0
+	Environment seed      : 777
+	Physics step-size     : 0.005
+	Rendering step-size   : 0.02
+	Environment step-size : 0.02
+[INFO] Generating terrains randomly took : 0.001567 seconds
+[33m21:55:35 [prims.py] WARNING: Could not perform 'bind_physics_material' on any prims under: '/World/envs/env_0/HighwayCollision/geometry/mesh'. This might be because of the following reasons:
+	(1) The desired attribute does not exist on any of the prims.
+	(2) The desired attribute exists on an instanced prim.
+		Discovered list of instanced prim paths: [][0m
+2026-10-04T13:55:33Z [19,487ms] [Warning] [isaacsim.asset.importer.urdf] link front_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:33Z [19,487ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:33Z [19,487ms] [Warning] [isaacsim.asset.importer.urdf] link laser has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:34Z [20,189ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:34Z [20,189ms] [Warning] [isaacsim.asset.importer.urdf] link camera_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:34Z [20,189ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:34Z [20,189ms] [Warning] [isaacsim.asset.importer.urdf] link controller_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:34Z [20,189ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:34Z [20,189ms] [Warning] [isaacsim.asset.importer.urdf] link front_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:34Z [20,189ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:34Z [20,189ms] [Warning] [isaacsim.asset.importer.urdf] link laser has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:34Z [20,883ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:34Z [20,883ms] [Warning] [isaacsim.asset.importer.urdf] link camera_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:34Z [20,883ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:34Z [20,883ms] [Warning] [isaacsim.asset.importer.urdf] link controller_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:34Z [20,883ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:34Z [20,883ms] [Warning] [isaacsim.asset.importer.urdf] link front_link has body properties (mass, inertia, or collisions) and is being merged into base_link
+2026-10-04T13:55:34Z [20,883ms] [Warning] [isaacsim.asset.importer.urdf] DEPRECATION WARNING: Merging bodies with inertia is deprecated. This will be removed in a future release.
+2026-10-04T13:55:34Z [20,883ms] [Warning] [isaacsim.asset.importer.urdf] link laser has body properties (mass, inertia, or collisions) and is being merged into base_link
+[INFO]: Time taken for scene creation : 10.159444 seconds
+[INFO]: Scene manager:  <class InteractiveScene>
+	Number of environments: 16
+	Environment spacing   : 25.0
+	Source prim name      : /World/envs/env_0
+	Global prim paths     : ['/World/ground']
+	Replicate physics     : True
+[INFO]: Starting the simulation. This may take a few seconds. Please wait...
+[INFO]: Time taken for simulation start : 1.871530 seconds
+[INFO] Command Manager:  <CommandManager> contains 1 active terms.
++---------------------------------------------------+
+|                Active Command Terms               |
++-------+---------------+---------------------------+
+| Index | Name          |            Type           |
++-------+---------------+---------------------------+
+|   0   | base_velocity | LaneChangeVelocityCommand |
++-------+---------------+---------------------------+
+
+[INFO] Event Manager:  <EventManager> contains 1 active terms.
++-------------------------------------+
+| Active Event Terms in Mode: 'reset' |
++--------+----------------------------+
+| Index  | Name                       |
++--------+----------------------------+
+|   0    | reset_scene_to_default     |
++--------+----------------------------+
+
+[INFO] Recorder Manager:  <RecorderManager> contains 0 active terms.
++---------------------+
+| Active Recorder Terms |
++-----------+---------+
+|   Index   | Name    |
++-----------+---------+
++-----------+---------+
+
+[INFO] Action Manager:  <ActionManager> contains 5 active terms.
++------------------------------------+
+|  Active Action Terms (shape: 10)   |
++--------+--------------+------------+
+| Index  | Name         |  Dimension |
++--------+--------------+------------+
+|   0    | ackermann_1  |          2 |
+|   1    | ackermann_2  |          2 |
+|   2    | ackermann_3  |          2 |
+|   3    | ackermann_4  |          2 |
+|   4    | ackermann_5  |          2 |
++--------+--------------+------------+
+
+[INFO] Observation Manager: <ObservationManager> contains 1 groups.
++------------------------------------------------------+
+| Active Observation Terms in Group: 'policy' (shape: (55,)) |
++------------+----------------------------+------------+
+|   Index    | Name                       |   Shape    |
++------------+----------------------------+------------+
+|     0      | rel_pos_chain              |   (55,)    |
++------------+----------------------------+------------+
+
+[INFO] Termination Manager:  <TerminationManager> contains 3 active terms.
++-------------------------------------------+
+|          Active Termination Terms         |
++-------+------------------------+----------+
+| Index | Name                   | Time Out |
++-------+------------------------+----------+
+|   0   | time_out               |   True   |
+|   1   | reset_on_bad_ori       |  False   |
+|   2   | road_boundary_exceeded |  False   |
++-------+------------------------+----------+
+
+[INFO] Reward Manager:  <RewardManager> contains 16 active terms.
++-------------------------------------+
+|         Active Reward Terms         |
++-------+--------------------+--------+
+| Index | Name               | Weight |
++-------+--------------------+--------+
+|   0   | leader_motion      |    5.0 |
+|   1   | leader_progress    |    6.0 |
+|   2   | formation          |    2.0 |
+|   3   | collision_risk     |  -12.0 |
+|   4   | no_backward        |  -10.0 |
+|   5   | forward_drive      |    6.0 |
+|   6   | stall_penalty      |   -4.0 |
+|   7   | action_rate        |   -0.1 |
+|   8   | lateral_correct    |   -3.0 |
+|   9   | lateral_velocity   |   -0.8 |
+|   10  | centerline_lateral |   -0.3 |
+|   11  | heading_align      |   -0.8 |
+|   12  | road_boundary      |   -4.0 |
+|   13  | true_success       |    0.5 |
+|   14  | true_fail          |   -1.0 |
+|   15  | alive              |    0.2 |
++-------+--------------------+--------+
+
+[INFO] Curriculum Manager:  <CurriculumManager> contains 0 active terms.
++----------------------+
+| Active Curriculum Terms |
++-----------+----------+
+|   Index   | Name     |
++-----------+----------+
++-----------+----------+
+
+[INFO]: Completed setting up the environment...
+[Platoon Algorithm] configured: algorithm=happo, use_happo_actions=True, teacher=True, attack=True, shield=True, wheel_axis_adapter=False, action_clip=0.4, warmup_updates=0, log_level=basic
+[Platoon HAPPO] runner built: num_envs=16, num_agents=5, obs_dim=11, act_dim=2, share_obs_dim=55, episode_length=32, device=cuda:0, ams=1, ams_k=8, ams_radius=0.250, ams_weight=0.100
+[Platoon HAPPO] action override active: joint_actions=(16, 5, 2), flat_action_dim=10
+[DEBUG][leader_motion] step= 20
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [-0.0035411533899605274, -0.024661943316459656]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [9.448176383972168, 0.06283190846443176, 9.242335319519043, 0.06184694543480873, 0.638325572013855, -1.5445988178253174]
+[DEBUG][leader_motion] error_mean= 0.22012680768966675
+[DEBUG][leader_motion] reward_mean= 0.7497200965881348
+[DEBUG][leader_motion] step= 80
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.2610761225223541, 0.00914051290601492]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.98830509185791, 0.07653067260980606, 14.93380355834961, -0.039251118898391724, -7.178355693817139, -7.465696334838867]
+[DEBUG][leader_motion] error_mean= 0.09683161228895187
+[DEBUG][leader_motion] reward_mean= 0.9351921081542969
+[DEBUG][leader_motion] step= 140
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.35707148909568787, -0.022352689877152443]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.441261291503906, 0.45172059535980225, -14.547661781311035, -0.5946903824806213, -11.433011054992676, -10.48226261138916]
+[DEBUG][leader_motion] error_mean= 0.13767582178115845
+[DEBUG][leader_motion] reward_mean= 0.877890944480896
+[DEBUG][leader_motion] step= 200
+[DEBUG][leader_motion] command_vel[0]= [0.36060789227485657, 0.0, -0.015417654998600483]
+[DEBUG][leader_motion] actual_vel[0]= [0.4586794674396515, -0.0063972012139856815]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.883162498474121, 0.037396252155303955, 15.11284065246582, -0.22578290104866028, -12.913229942321777, -14.329007148742676]
+[DEBUG][leader_motion] error_mean= 0.1698436439037323
+[DEBUG][leader_motion] reward_mean= 0.8293038606643677
+[DEBUG][leader_motion] step= 260
+[DEBUG][leader_motion] command_vel[0]= [0.3608248829841614, 0.0, -0.043275751173496246]
+[DEBUG][leader_motion] actual_vel[0]= [0.4245227575302124, -0.03716578334569931]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.780062675476074, 0.17466096580028534, -14.299057006835938, -0.17604142427444458, -10.667388916015625, -10.991167068481445]
+[DEBUG][leader_motion] error_mean= 0.10831241309642792
+[DEBUG][leader_motion] reward_mean= 0.9196531772613525
+[DEBUG][leader_motion] step= 320
+[DEBUG][leader_motion] command_vel[0]= [0.36164411902427673, 0.0, -0.056044191122055054]
+[DEBUG][leader_motion] actual_vel[0]= [0.15649542212486267, -0.010738572105765343]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.567870140075684, 0.5611093044281006, -14.427319526672363, -0.5510110259056091, -5.623625755310059, -3.7216577529907227]
+[DEBUG][leader_motion] error_mean= 0.15245401859283447
+[DEBUG][leader_motion] reward_mean= 0.8630517721176147
+[DEBUG][leader_motion] step= 380
+[DEBUG][leader_motion] command_vel[0]= [0.3638790547847748, 0.0, -0.06189282238483429]
+[DEBUG][leader_motion] actual_vel[0]= [0.4577420949935913, 0.009278997778892517]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-14.736276626586914, -1.0785458087921143, -21.05866241455078, 0.7495566010475159, -17.528858184814453, -13.881718635559082]
+[DEBUG][leader_motion] error_mean= 0.11681221425533295
+[DEBUG][leader_motion] reward_mean= 0.9005311131477356
+[DEBUG][leader_motion] step= 440
+[DEBUG][leader_motion] command_vel[0]= [0.3683183789253235, 0.0, -0.05772601440548897]
+[DEBUG][leader_motion] actual_vel[0]= [0.42580753564834595, -0.016492407768964767]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-11.88765811920166, -1.096709132194519, 3.8674755096435547, -0.9163682460784912, -13.262948036193848, -11.62912368774414]
+[DEBUG][leader_motion] error_mean= 0.11400438100099564
+[DEBUG][leader_motion] reward_mean= 0.9030090570449829
+[DEBUG][leader_motion] step= 500
+[DEBUG][leader_motion] command_vel[0]= [0.37262412905693054, 0.0, -0.04804261401295662]
+[DEBUG][leader_motion] actual_vel[0]= [0.3200905919075012, 0.015963904559612274]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [15.439384460449219, 0.48816755414009094, 14.560626983642578, -0.43846726417541504, -11.330634117126465, -9.98426628112793]
+[DEBUG][leader_motion] error_mean= 0.12107647210359573
+[DEBUG][leader_motion] reward_mean= 0.9006029963493347
+[DEBUG][leader_motion] step= 560
+[DEBUG][leader_motion] command_vel[0]= [0.3757690191268921, 0.0, -0.03829917311668396]
+[DEBUG][leader_motion] actual_vel[0]= [0.24656030535697937, -0.007334230933338404]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [15.502134323120117, 0.39633503556251526, 14.599315643310547, -2.868406057357788, -8.410592079162598, -4.61223030090332]
+[DEBUG][leader_motion] error_mean= 0.13973212242126465
+[DEBUG][leader_motion] reward_mean= 0.8767373561859131
+[DEBUG][leader_motion] step= 620
+[DEBUG][leader_motion] command_vel[0]= [0.3789394795894623, 0.0, -0.024470286443829536]
+[DEBUG][leader_motion] actual_vel[0]= [0.31377071142196655, 0.009342139586806297]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.351686477661133, -1.0727119445800781, 10.167779922485352, 3.7911791801452637, -9.329513549804688, -10.595308303833008]
+[DEBUG][leader_motion] error_mean= 0.08230392634868622
+[DEBUG][leader_motion] reward_mean= 0.9520381689071655
+[DEBUG][leader_motion] step= 680
+[DEBUG][leader_motion] command_vel[0]= [0.3810412883758545, 0.0, -0.005009478889405727]
+[DEBUG][leader_motion] actual_vel[0]= [0.3942767381668091, -0.013627266511321068]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.705812454223633, 0.9790399670600891, -14.651652336120605, -0.7702942490577698, -12.300156593322754, -10.19350528717041]
+[DEBUG][leader_motion] error_mean= 0.12942716479301453
+[DEBUG][leader_motion] reward_mean= 0.8966237306594849
+[DEBUG][leader_motion] step= 740
+[DEBUG][leader_motion] command_vel[0]= [0.38014519214630127, 0.0, 0.016403377056121826]
+[DEBUG][leader_motion] actual_vel[0]= [0.42903971672058105, 0.05664198100566864]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-14.967132568359375, 0.2285483330488205, -18.519939422607422, -0.010102272033691406, -11.7644624710083, -14.565376281738281]
+[DEBUG][leader_motion] error_mean= 0.15645994246006012
+[DEBUG][leader_motion] reward_mean= 0.8578962087631226
+[DEBUG][leader_motion] step= 800
+[DEBUG][leader_motion] command_vel[0]= [0.37653619050979614, 0.0, 0.035459961742162704]
+[DEBUG][leader_motion] actual_vel[0]= [0.3308284878730774, 0.03011099435389042]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-18.179288864135742, 1.0468413829803467, -2.955899715423584, -2.330770492553711, -11.040474891662598, -11.483295440673828]
+[DEBUG][leader_motion] error_mean= 0.11619232594966888
+[DEBUG][leader_motion] reward_mean= 0.9099164009094238
+[DEBUG][leader_motion] step= 860
+[DEBUG][leader_motion] command_vel[0]= [0.37269023060798645, 0.0, 0.047863028943538666]
+[DEBUG][leader_motion] actual_vel[0]= [0.3608580529689789, 0.017045747488737106]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.089231491088867, 0.019545020535588264, -15.278264045715332, 0.044642381370067596, -10.545492172241211, -8.24674129486084]
+[DEBUG][leader_motion] error_mean= 0.09252160787582397
+[DEBUG][leader_motion] reward_mean= 0.9400558471679688
+[DEBUG][leader_motion] step= 920
+[DEBUG][leader_motion] command_vel[0]= [0.36745402216911316, 0.0, 0.05915157124400139]
+[DEBUG][leader_motion] actual_vel[0]= [0.3965451419353485, 0.04057221859693527]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-14.797870635986328, 0.45309901237487793, -15.243755340576172, -0.5176234841346741, -11.69262981414795, -11.878318786621094]
+[DEBUG][leader_motion] error_mean= 0.13108089566230774
+[DEBUG][leader_motion] reward_mean= 0.8866497278213501
+[DEBUG][leader_motion] step= 980
+[DEBUG][leader_motion] command_vel[0]= [0.3631155788898468, 0.0, 0.06123111769556999]
+[DEBUG][leader_motion] actual_vel[0]= [0.44740089774131775, -0.009043748490512371]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [10.581439018249512, -0.1174265667796135, 11.16214656829834, 0.1469595581293106, -15.001797676086426, -14.768390655517578]
+[DEBUG][leader_motion] error_mean= 0.09471189230680466
+[DEBUG][leader_motion] reward_mean= 0.9384979009628296
+[DEBUG][leader_motion] step= 1040
+[DEBUG][leader_motion] command_vel[0]= [0.360947847366333, 0.0, 0.04698934406042099]
+[DEBUG][leader_motion] actual_vel[0]= [0.39080724120140076, -0.017267409712076187]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-14.126808166503906, 0.5015901923179626, -12.282658576965332, 3.7863903045654297, -10.01253604888916, -19.241683959960938]
+[DEBUG][leader_motion] error_mean= 0.09941445291042328
+[DEBUG][leader_motion] reward_mean= 0.923227846622467
+[DEBUG][leader_motion] step= 1100
+[DEBUG][leader_motion] command_vel[0]= [0.3606073558330536, 0.0, 0.014294943772256374]
+[DEBUG][leader_motion] actual_vel[0]= [0.31979331374168396, -0.010783335193991661]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [15.63243579864502, 0.7270081043243408, 14.367855072021484, -0.7006865739822388, -10.015149116516113, -9.507753372192383]
+[DEBUG][leader_motion] error_mean= 0.10464543104171753
+[DEBUG][leader_motion] reward_mean= 0.9325208067893982
+[DEBUG][leader_motion] step= 1160
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.4906245470046997, -0.02144959382712841]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.032029151916504, 1.2194368839263916, -14.589543342590332, -1.1759912967681885, -11.729496955871582, -11.379638671875]
+[DEBUG][leader_motion] error_mean= 0.1146172285079956
+[DEBUG][leader_motion] reward_mean= 0.9127670526504517
+[DEBUG][leader_motion] step= 1220
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.14524754881858826, 0.03618253022432327]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.38917064666748, -1.101608395576477, 15.545439720153809, 1.0782707929611206, -5.5057291984558105, -4.103052139282227]
+[DEBUG][leader_motion] error_mean= 0.10462948679924011
+[DEBUG][leader_motion] reward_mean= 0.922743558883667
+[DEBUG][leader_motion] step= 1280
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.1605493128299713, 0.04961884021759033]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.27033805847168, -1.9717652797698975, 15.646732330322266, 0.9788506031036377, -5.276374816894531, -3.1497368812561035]
+[DEBUG][leader_motion] error_mean= 0.1270567625761032
+[DEBUG][leader_motion] reward_mean= 0.8951833248138428
+[DEBUG][leader_motion] step= 1340
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.36497122049331665, -0.0378827266395092]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [11.87934684753418, 0.6088741421699524, 10.930510520935059, -0.7682803869247437, -12.371322631835938, -4.927563190460205]
+[DEBUG][leader_motion] error_mean= 0.12613429129123688
+[DEBUG][leader_motion] reward_mean= 0.9010581970214844
+[DEBUG][leader_motion] step= 1400
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.3848843574523926, 0.02712252549827099]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [0.5989148020744324, 0.8993873596191406, 0.4944567382335663, -0.8404935002326965, -13.673649787902832, -9.905645370483398]
+[DEBUG][leader_motion] error_mean= 0.13652130961418152
+[DEBUG][leader_motion] reward_mean= 0.888275146484375
+[DEBUG][leader_motion] step= 1460
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.11635158956050873, 0.058316994458436966]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.35997200012207, -0.411203533411026, 14.198925018310547, 0.5237033367156982, -3.5136682987213135, -2.1647725105285645]
+[DEBUG][leader_motion] error_mean= 0.11914309114217758
+[DEBUG][leader_motion] reward_mean= 0.9091999530792236
+[DEBUG][leader_motion] step= 1520
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.3061325252056122, -0.06570765376091003]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.666979789733887, 0.8221917748451233, -14.29973316192627, -0.837977409362793, -8.537739753723145, -6.853227138519287]
+[DEBUG][leader_motion] error_mean= 0.14646801352500916
+[DEBUG][leader_motion] reward_mean= 0.8732937574386597
+[DEBUG][leader_motion] step= 1580
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.27420955896377563, -0.012108486145734787]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.570782661437988, -0.7799025774002075, 16.14215850830078, 0.6105268001556396, -8.71749210357666, -9.12987995147705]
+[DEBUG][leader_motion] error_mean= 0.1079527959227562
+[DEBUG][leader_motion] reward_mean= 0.9179980158805847
+[DEBUG][leader_motion] step= 1640
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.406871497631073, -0.0469062477350235]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-9.525376319885254, 0.035635679960250854, -14.543818473815918, 0.07527749240398407, -10.520856857299805, -11.988208770751953]
+[DEBUG][leader_motion] error_mean= 0.09770191460847855
+[DEBUG][leader_motion] reward_mean= 0.943753182888031
+[DEBUG][leader_motion] step= 1700
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.127707377076149, -0.019080335274338722]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.700784683227539, 0.13864603638648987, -14.29920768737793, -0.1599627286195755, -3.569993495941162, -4.004045486450195]
+[DEBUG][leader_motion] error_mean= 0.13927677273750305
+[DEBUG][leader_motion] reward_mean= 0.8787370920181274
+[DEBUG][leader_motion] step= 1760
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.2875520884990692, 0.04039498791098595]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-13.779608726501465, -0.31012433767318726, -15.496221542358398, 0.35108304023742676, -8.094189643859863, -7.275094032287598]
+[DEBUG][leader_motion] error_mean= 0.15312397480010986
+[DEBUG][leader_motion] reward_mean= 0.8550527095794678
+[DEBUG][leader_motion] step= 1820
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.2434692084789276, 0.028908859938383102]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [7.278284072875977, -0.546485185623169, 7.7762556076049805, 0.7554565072059631, -8.345194816589355, -9.89697265625]
+[DEBUG][leader_motion] error_mean= 0.12497095763683319
+[DEBUG][leader_motion] reward_mean= 0.9073262214660645
+[DEBUG][leader_motion] step= 1880
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.09595392644405365, 0.0032498715445399284]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.01327133178711, -0.3916710317134857, -10.936519622802734, 0.1988518238067627, 0.5636807680130005, -1.0120388269424438]
+[DEBUG][leader_motion] error_mean= 0.1281876415014267
+[DEBUG][leader_motion] reward_mean= 0.8880137801170349
+[DEBUG][leader_motion] step= 1940
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.3455906808376312, 0.0126118129119277]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.138930320739746, -2.7727227210998535, -15.837376594543457, -2.9633255004882812, -30.814748764038086, -17.147533416748047]
+[DEBUG][leader_motion] error_mean= 0.11794111877679825
+[DEBUG][leader_motion] reward_mean= 0.8951622247695923
+[DEBUG][leader_motion] step= 2000
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.24242675304412842, 0.02817000262439251]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-5.019752502441406, -0.6590560078620911, -5.280167102813721, 0.1252962350845337, -6.9875712394714355, -7.890934944152832]
+[DEBUG][leader_motion] error_mean= 0.132550448179245
+[DEBUG][leader_motion] reward_mean= 0.8944126963615417
+[DEBUG][leader_motion] step= 2060
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.27539774775505066, 0.006387494504451752]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [8.107568740844727, -0.7834972739219666, 15.743905067443848, -1.643105387687683, -6.577305793762207, -17.3975830078125]
+[DEBUG][leader_motion] error_mean= 0.11185730993747711
+[DEBUG][leader_motion] reward_mean= 0.9300367832183838
+[DEBUG][leader_motion] step= 2120
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.31432658433914185, -0.002032766817137599]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.43992805480957, -0.5292331576347351, 15.561616897583008, 0.6737910509109497, -9.476808547973633, -10.754281997680664]
+[DEBUG][leader_motion] error_mean= 0.09286695718765259
+[DEBUG][leader_motion] reward_mean= 0.9432552456855774
+[DEBUG][leader_motion] step= 2180
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.48065730929374695, -0.0027799480594694614]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.342448234558105, 0.5673800110816956, -14.657551765441895, -0.5349864363670349, -14.296091079711914, -14.445281028747559]
+[DEBUG][leader_motion] error_mean= 0.10937218368053436
+[DEBUG][leader_motion] reward_mean= 0.9320765733718872
+[DEBUG][leader_motion] step= 2240
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.34734925627708435, -0.01052370760589838]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-14.656965255737305, -0.44421645998954773, -14.773659706115723, 0.5585021376609802, -10.780747413635254, -6.155068397521973]
+[DEBUG][leader_motion] error_mean= 0.10615411400794983
+[DEBUG][leader_motion] reward_mean= 0.9066691398620605
+[DEBUG][leader_motion] step= 2300
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.2515064477920532, -0.017895955592393875]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-13.817915916442871, -0.82721346616745, -15.61430835723877, 0.8320857286453247, -7.216753959655762, -9.25580883026123]
+[DEBUG][leader_motion] error_mean= 0.12694106996059418
+[DEBUG][leader_motion] reward_mean= 0.8988867998123169
+[DEBUG][leader_motion] step= 2360
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.47824597358703613, -0.0030259413179010153]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-11.980046272277832, -0.48699814081192017, -13.931204795837402, 1.5293121337890625, -15.273977279663086, -12.847174644470215]
+[DEBUG][leader_motion] error_mean= 0.0709683895111084
+[DEBUG][leader_motion] reward_mean= 0.9707655310630798
+[DEBUG][leader_motion] step= 2420
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.3456474542617798, -0.0033267480321228504]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.431827545166016, 0.6254254579544067, -14.53000545501709, -0.8867647051811218, -10.404688835144043, -6.949977397918701]
+[DEBUG][leader_motion] error_mean= 0.10857424139976501
+[DEBUG][leader_motion] reward_mean= 0.922200620174408
+[DEBUG][leader_motion] step= 2480
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.22695456445217133, 0.007735827937722206]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [15.630855560302734, 0.8380635976791382, 14.368228912353516, -0.848494827747345, -8.761703491210938, -5.582025051116943]
+[DEBUG][leader_motion] error_mean= 0.12727555632591248
+[DEBUG][leader_motion] reward_mean= 0.887427568435669
+[DEBUG][leader_motion] step= 2540
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.18832017481327057, -0.013632835820317268]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.697086334228516, 0.46491241455078125, -14.29928970336914, -0.5289438962936401, -6.308664321899414, -3.750685453414917]
+[DEBUG][leader_motion] error_mean= 0.09718190133571625
+[DEBUG][leader_motion] reward_mean= 0.9223345518112183
+[DEBUG][leader_motion] step= 2600
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.14087393879890442, 0.005766814108937979]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-4.828729629516602, 0.02450716122984886, -4.461480140686035, 0.07119233906269073, -4.7061309814453125, -4.5544843673706055]
+[DEBUG][leader_motion] error_mean= 0.13994798064231873
+[DEBUG][leader_motion] reward_mean= 0.8820028901100159
+[DEBUG][leader_motion] step= 2660
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.3485148847103119, 0.024362711235880852]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.299933433532715, -0.4138610064983368, 15.702033996582031, 0.41350311040878296, -9.48585319519043, -10.160151481628418]
+[DEBUG][leader_motion] error_mean= 0.1088826134800911
+[DEBUG][leader_motion] reward_mean= 0.9188014268875122
+[DEBUG][leader_motion] step= 2720
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.4295295774936676, 0.0037380200810730457]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-14.868949890136719, -0.31971728801727295, -15.127223014831543, 0.40686166286468506, -13.529439926147461, -12.831292152404785]
+[DEBUG][leader_motion] error_mean= 0.1234426498413086
+[DEBUG][leader_motion] reward_mean= 0.8979524970054626
+[DEBUG][leader_motion] step= 2780
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.3456232249736786, 0.023580683395266533]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-5.055344104766846, -1.9595468044281006, -5.461610317230225, -0.1685580015182495, -5.716287136077881, -8.65964412689209]
+[DEBUG][leader_motion] error_mean= 0.11476851254701614
+[DEBUG][leader_motion] reward_mean= 0.9065055847167969
+[DEBUG][leader_motion] step= 2840
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.12411325424909592, 0.013474831357598305]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.239813804626465, 0.7977281808853149, -14.743824005126953, -0.7103407979011536, -3.406438112258911, -2.2965502738952637]
+[DEBUG][leader_motion] error_mean= 0.09074577689170837
+[DEBUG][leader_motion] reward_mean= 0.9427120685577393
+[DEBUG][leader_motion] step= 2900
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.2308691143989563, 0.03817011043429375]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [14.329280853271484, -0.3773205578327179, 14.402177810668945, 0.4837265908718109, -7.74171257019043, -6.764247417449951]
+[DEBUG][leader_motion] error_mean= 0.11249925941228867
+[DEBUG][leader_motion] reward_mean= 0.9205982685089111
+[DEBUG][leader_motion] step= 2960
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.295651376247406, 0.005346305668354034]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-14.640314102172852, -0.636212944984436, -15.323508262634277, 0.6345763802528381, -7.012859344482422, -8.776108741760254]
+[DEBUG][leader_motion] error_mean= 0.11473531275987625
+[DEBUG][leader_motion] reward_mean= 0.9162429571151733
+[DEBUG][leader_motion] step= 3020
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.2047313004732132, -0.05191709101200104]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [15.679696083068848, 0.41708800196647644, 14.3203125, -0.43219682574272156, -5.715848445892334, -0.1118243932723999]
+[DEBUG][leader_motion] error_mean= 0.09588689357042313
+[DEBUG][leader_motion] reward_mean= 0.9344006776809692
+[DEBUG][leader_motion] step= 3080
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.34750282764434814, -0.05015111342072487]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [15.027182579040527, -0.882806122303009, 14.98739242553711, 0.14073193073272705, -9.15422248840332, -12.304486274719238]
+[DEBUG][leader_motion] error_mean= 0.11171084642410278
+[DEBUG][leader_motion] reward_mean= 0.920974850654602
+[DEBUG][leader_motion] step= 3140
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.2978488504886627, 0.010082265362143517]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [10.303285598754883, -1.0258917808532715, 10.895703315734863, 1.0651708841323853, -9.24594497680664, -9.01955509185791]
+[DEBUG][leader_motion] error_mean= 0.11233912408351898
+[DEBUG][leader_motion] reward_mean= 0.9183738231658936
+[DEBUG][leader_motion] step= 3200
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.4037790894508362, -0.0460161417722702]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [1.7104673385620117, 0.4006049335002899, -1.0252019166946411, -0.9676156640052795, -11.823394775390625, -13.066650390625]
+[DEBUG][leader_motion] error_mean= 0.10633695870637894
+[DEBUG][leader_motion] reward_mean= 0.9190890789031982
+[DEBUG][leader_motion] step= 3260
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.1859285533428192, -0.03578364849090576]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [13.553184509277344, -0.5372978448867798, 14.940321922302246, 0.6190305948257446, -3.031709671020508, -7.495595932006836]
+[DEBUG][leader_motion] error_mean= 0.1363426297903061
+[DEBUG][leader_motion] reward_mean= 0.886378288269043
+[DEBUG][leader_motion] step= 3320
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.4603647291660309, -0.010391895659267902]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-12.139442443847656, -0.35728883743286133, -14.792132377624512, 0.35284650325775146, -12.46019458770752, -12.731451988220215]
+[DEBUG][leader_motion] error_mean= 0.1185341328382492
+[DEBUG][leader_motion] reward_mean= 0.9081387519836426
+[DEBUG][leader_motion] step= 3380
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.004966713488101959, -0.012556693516671658]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [15.680981636047363, 0.7706295251846313, 13.154694557189941, -0.793213963508606, 0.2520520091056824, -1.0326786041259766]
+[DEBUG][leader_motion] error_mean= 0.10734446346759796
+[DEBUG][leader_motion] reward_mean= 0.9115517139434814
+[DEBUG][leader_motion] step= 3440
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.3732258379459381, -0.023311393335461617]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-15.88553237915039, 0.8390377759933472, -14.281689643859863, -0.41192305088043213, -12.098843574523926, -10.93671703338623]
+[DEBUG][leader_motion] error_mean= 0.10182060301303864
+[DEBUG][leader_motion] reward_mean= 0.9322301149368286
+[DEBUG][leader_motion] step= 3500
+[DEBUG][leader_motion] command_vel[0]= [0.3606058955192566, 0.0, -0.0]
+[DEBUG][leader_motion] actual_vel[0]= [0.25607776641845703, -0.015207801014184952]
+[DEBUG][leader_motion] wheel_joint_vel[0]= [-3.0845048427581787, 0.008050833828747272, -3.1607859134674072, 0.10127512365579605, -7.33754301071167, -9.752182006835938]
+[DEBUG][leader_motion] error_mean= 0.08828981220722198
+[DEBUG][leader_motion] reward_mean= 0.9359079599380493
+[EVAL] model_final.pt: return=56194.390, cmd=0.387, leader=0.321, platoon=0.318, speed_err=0.109, center=0.015, lat=0.064, min_gap=1.329, collision=0.000, road_out=0.000, road_exceed=0.000, whole_done=0.625, min_progress=0.000, p=[0.072,0.061,0.061,0.060], reset_bad=0.000, shield_lat_turn=0.028, attack_enabled=1, worst={1: 1490, 2: 759, 3: 610, 4: 641}
+[EVAL] wrote summary: /home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/ams_verified_matrix_repair_20261003/final_ladders/happo_meta_ams/hard_b/validation/attack_env777_seed17011/eval_summary.csv

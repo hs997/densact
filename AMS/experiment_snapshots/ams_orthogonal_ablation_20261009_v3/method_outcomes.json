@@ -1,0 +1,20 @@
+{
+  "happo_base_shared": {
+    "status": "passed_hard_b",
+    "stopped_level": null,
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-10_01-21-59_ams_orthogonal_ablation_20261009_v3_happo_base_shared_hard_b_r3_happo_base_shared/model_final.pt",
+    "checkpoint_sha256": "b199572757e444194495736c511d47ec23bd7200ef3ccf8983c1ed8adecbcf1a"
+  },
+  "happo_meta": {
+    "status": "passed_hard_b",
+    "stopped_level": null,
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-10_10-44-46_ams_orthogonal_ablation_20261009_v3_happo_meta_hard_b_r2_happo_meta/model_final.pt",
+    "checkpoint_sha256": "954f2db85e6d947e21b985ca528ff643db9efd54c5759b29b27d303568d4025c"
+  },
+  "happo_ams_only": {
+    "status": "stopped_at_gate",
+    "stopped_level": "light",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_bc_warmstart/real_trajectory_bc/model_bc.pt",
+    "checkpoint_sha256": "6b8c15acf17b7e250a65fc85609c304ba2cc14f8d0a65d8f34b4188f6e801615"
+  }
+}

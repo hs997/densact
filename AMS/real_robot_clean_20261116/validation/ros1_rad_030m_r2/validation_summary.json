@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-16",
+  "requested_parameters": {
+    "ros_version": 1,
+    "command_mode": "speed_steering_angle",
+    "wheelbase_m": 0.3,
+    "status": "user-selected provisional values; not measured hardware certification"
+  },
+  "unit_tests": {
+    "count": 26,
+    "passed": true,
+    "python": "3.13.9"
+  },
+  "loopback_test": "loopback_report.json",
+  "source_sha256": {
+    "config/single_car_clean.json": "b53dd7acf4f031217731711cbc7c675f7e6c0a0143bccc05c18261078ba30f4f",
+    "core.py": "efe05e4d4b477a44bb8c61cb22c3ab70ed5382f34380d7b1b1cd598105d5d617",
+    "tests/test_core.py": "083d135e70cefaf9a8cc77caed37d75a4f151bd6d806f860f6a26a538fd04875",
+    "tests/ros1_loopback.py": "f51b40636e19d9a41dfcf6df74629caf3714045969482f75b8d3b8b1ff1c747b"
+  },
+  "hardware_connected": false,
+  "network_weights_changed": false,
+  "training_started": false,
+  "geometry_note": "Existing body length 0.24m is an unmeasured placeholder smaller than the provisional wheelbase. Arming now rejects length < wheelbase. Loopback uses synthetic body length 0.40m, not a hardware measurement."
+}

@@ -280,6 +280,8 @@ class Guard:
             return 'commissioning_fields_not_confirmed'
         if h['command_mode'] == 'unconfirmed' or h['wheelbase_m'] is None or not finite(h['wheelbase_m']) or h['wheelbase_m'] <= 0:
             return 'missing_chassis_mode_or_wheelbase'
+        if s['vehicle_length_m'] < h['wheelbase_m']:
+            return 'vehicle_length_smaller_than_wheelbase'
         if not pose_fresh(self.state, self.cfg, now, ros_now):
             return 'mocap_not_ready_or_stale'
         start = self.cfg['mocap']['origin_model_xy']

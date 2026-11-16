@@ -5,8 +5,9 @@ Creates its own temporary master port, private topics, and test-only confirmed
 geometry. These simulated configuration confirmations are not hardware evidence.
 """
 import argparse
-import copy
+import csv
 import json
+import math
 import os
 import signal
 import socket
@@ -57,10 +58,15 @@ def main():
         ros.init_node('ams_loopback_harness',anonymous=True,disable_signals=True)
         config=json.loads((ROOT/'config/single_car_clean.json').read_text())
         for key in config['topics']: config['topics'][key]='/ams_loopback_test/'+key
-        config['hardware'].update(command_mode='speed_yaw_rate',wheelbase_m=.25,protocol_confirmed=True,
-            geometry_confirmed=True,base_command_timeout_verified=True)
+        if config['hardware']['command_mode'] == 'unconfirmed' or config['hardware']['wheelbase_m'] is None:
+            raise ValueError('Select a command mode and test wheelbase in config before this test')
+        config['hardware'].update(protocol_confirmed=True,geometry_confirmed=True,base_command_timeout_verified=True)
+        # Mock geometry only; the real configuration remains unconfirmed.
+        config['safety']['vehicle_length_m']=max(.40,config['hardware']['wheelbase_m']+.10)
         config['mocap']['transform_confirmed']=True; config['safety']['geofence_confirmed']=True
         config['control']['max_run_s']=30.
+        report.update(ros_version=1,command_mode=config['hardware']['command_mode'],
+                      wheelbase_m=config['hardware']['wheelbase_m'])
         cfg=args.output/'SYNTHETIC_TEST_ONLY.json'; cfg.write_text(json.dumps(config,indent=2)+'\n')
         commands=[]; mutex=threading.Lock()
         def on_command(msg):
@@ -115,6 +121,21 @@ def main():
         with mutex:
             report['output_samples']=len(commands)
             report['max_mock_speed_mps']=max(abs(v) for _,v,_ in commands)
+        with (args.output/'guard/samples.csv').open() as f:
+            rows=list(csv.DictReader(f))
+        expected_wire=set()
+        output_errors=[]
+        for row in rows:
+            v,delta,second=float(row['speed']),float(row['steering']),float(row['angular_z'])
+            expected=delta if config['hardware']['command_mode']=='speed_steering_angle' else v*math.tan(delta)/config['hardware']['wheelbase_m']
+            expected*=config['hardware']['steering_sign']
+            output_errors.append(abs(second-expected)); expected_wire.add((v,second))
+        with mutex: observed=[(v,w) for _,v,w in commands if v>0 and w!=0]
+        assert observed, 'No nonzero steering messages observed'
+        assert all(pair in expected_wire for pair in observed), 'Wire/log command mismatch'
+        assert max(output_errors)<1e-12, 'Angular.Z semantics do not match selected mode'
+        report['angular_z_matches_selected_units']=True
+        report['angular_z_max_absolute_error']=max(output_errors)
         assert policy.poll() is None and guard.poll() is None
         report['passed']=True
     finally:

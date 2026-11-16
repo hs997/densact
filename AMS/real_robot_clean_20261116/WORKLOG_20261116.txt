@@ -14,3 +14,13 @@
 - 服务器benchmark：python3 deploy/ams_real/benchmark.py --model deploy/ams_real/models/meta_ams_s0_leader；2000样本，x86_64中位0.042369ms、p99=0.050078ms，不含ROS和TX2性能。默认配置运行guard --execute预检按预期exit2，发生在ROS init/发布器创建前。
 - 交付目录 /home/cnc/Desktop/AMS/real_robot_clean_20261116，单独zip /home/cnc/Desktop/AMS_real_robot_clean_20261116.zip，包含运行代码、actor、模板配置、原MATLAB通信参考、验证记录、中文操作手册和文件哈希。没有修改论文、历史训练代码/参数/checkpoint/结果，也没有启动新训练、Isaac仿真或实车实验；原论文统计不变。
 - 下一步：确认实车输出语义、L、ROS版本/环境、动捕采集时间及坐标/标记偏置、实测车体/场地和底盘断令停车；先在TX2跑离线测试和shadow，再做现场方向/停止验证及低速领车clean。后续两车/五车恢复各自actor及完整观测后再做应用层有界攻击，并保持独立真值/停车链路。单车clean不能冒称五车协同或混合攻击验证。
+
+
+### 2026-11-16T12:37:03+08:00 按用户指定更新 ROS1、转角rad、暂定轴距0.30m
+
+- 用户回复“rad吧，轴距你先按照30cm，然后按照ros1”。已据此更新deploy/ams_real/config/single_car_clean.json：command_mode=speed_steering_angle、wheelbase_m=0.30；run_node.py/stop_keyboard.py原本默认--ros 1，沿用ROS1。转角模式下底盘Linear.X=v[m/s]、Angular.Z=delta[rad]，不执行yaw_rate换算；L用于guard转弯角速度限幅。未更改训练权重、仿真原始轴距0.14325m、速度/转角反归一化尺度或原实验结果。
+- 将“rad吧”和“先按30cm”记录为接入参数假设；不冒称实际固件语义/实测轴距已经确认，protocol_confirmed/geometry_confirmed等现场状态仍false。发现原模板车体长0.24m小于暂定轴距0.30m，未猜测新车长；Guard.arming_problem新增vehicle_length_smaller_than_wheelbase检查。测试假车车长设0.40m仅供回环，不写入实车模板。
+- 更新README_zh.txt，明确ROS1/转角模式、当前配置与历史验证的区别；修正tests/ros1_loopback.py读取实际所选command_mode/wheelbase，不再硬编码yaw_rate和0.25m，并核验ROS实际收到的命令与guard日志一致、第二通道单位符合所选模式。新增一项不可能车体几何的拒绝启动测试。
+- 执行OPENBLAS_NUM_THREADS=1 python3 deploy/ams_real/tests/test_core.py：26项通过。执行python3 deploy/ams_real/tests/ros1_loopback.py --output /home/cnc/SSD_1T/xzw/ams_runtime/ros1_loopback_20261116_rad_030m_r2：隔离master http://127.0.0.1:46189、ROS1、转角模式、0.30m；113条mock输出，Angular.Z与delta最大误差0；显式arm、策略挂起锁定停车、动捕断流停车、stop服务均通过。没有接入真实小车，没有实车训练/攻击实验。原来的源码/actor对照报告保留，不重复未修改网络的验证。
+- 新验证证据deploy/ams_real/validation/ros1_rad_030m_r2/，包含参数、源码SHA、mock指令CSV和结果。桌面资料仍为/home/cnc/Desktop/AMS/real_robot_clean_20261116，另存新ZIP /home/cnc/Desktop/AMS_real_robot_clean_20261116_ros1_rad_030m_r2.zip；旧ZIP保持原样。Git继续只同步资料分支AMS/real_robot_clean_20261116/，不混入主训练工作区其他修改。
+- 下一步：TX2的ROS1环境下进行shadow，核对动捕坐标/时间戳、舵机转角方向及底盘断令停车；车体长宽与场地仍需实测，参数确认后再做低速单车clean。当前未获实车连接信息，不自动向车辆发控制命令。

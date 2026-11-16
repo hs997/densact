@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "isolated_master": "http://127.0.0.1:46189",
+  "physical_hardware_connected": false,
+  "ros_version": 1,
+  "command_mode": "speed_steering_angle",
+  "wheelbase_m": 0.3,
+  "explicit_arming": true,
+  "hung_policy_stops_and_latches": true,
+  "lost_mocap_stops": true,
+  "explicit_stop_stops_and_latches": true,
+  "output_samples": 113,
+  "max_mock_speed_mps": 0.028113819193094972,
+  "angular_z_matches_selected_units": true,
+  "angular_z_max_absolute_error": 0.0
+}

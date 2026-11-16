@@ -10,8 +10,8 @@
   },
   "control": {"rate_hz": 50.0, "max_run_s": 70.0},
   "hardware": {
-    "command_mode": "unconfirmed",
-    "wheelbase_m": null,
+    "command_mode": "speed_steering_angle",
+    "wheelbase_m": 0.30,
     "steering_sign": 1,
     "protocol_confirmed": false,
     "geometry_confirmed": false,

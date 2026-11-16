@@ -29,6 +29,7 @@ class CoreTests(unittest.TestCase):
                                   geometry_confirmed=True,base_command_timeout_verified=True)
         self.c['mocap']['transform_confirmed'] = True
         self.c['safety']['geofence_confirmed'] = True
+        self.c['safety']['vehicle_length_m'] = .40  # synthetic test geometry, not a hardware measurement
         self.g.update_pose(self.state())
         self.assertTrue(self.g.arm(100.,100.)[0])
 
@@ -41,6 +42,14 @@ class CoreTests(unittest.TestCase):
         self.g.update_pose(self.state())
         self.assertFalse(self.g.arm(100,100)[0])
         self.assertEqual(self.g.tick(100,100)['speed'],0)
+
+    def test_confirmed_geometry_cannot_be_shorter_than_wheelbase(self):
+        self.ready(); self.g.stop()
+        self.c['hardware']['wheelbase_m'] = .30
+        self.c['safety']['vehicle_length_m'] = .24
+        ok, reason = self.g.arm(100,100)
+        self.assertFalse(ok)
+        self.assertEqual(reason, 'vehicle_length_smaller_than_wheelbase')
 
     def test_matlab_z_means_yaw(self):
         x,y,h=decode_pose((1,2,.3),(0,0,0,1),self.c['mocap'])

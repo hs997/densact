@@ -1,4 +1,4 @@
-Meta-AMS：单车 clean 实车接入初版（2026-11-16）
+Meta-AMS：单车 clean 实车接入（2026-11-16，ROS1 / 转角rad / 暂定轴距0.30m）
 
 用途与当前边界
 ==============
@@ -8,6 +8,10 @@ Meta-AMS：单车 clean 实车接入初版（2026-11-16）
 ROS2 适配器已写入，尚未在 ROS2 环境联调。TX2 性能和实车效果尚未验证。
 本目录不会启动训练、更新网络或加载训练时的 Teacher/AMS 双 Q。
 配置 attack 必须为 off；攻击注入留待 clean 接入验证后单独实现。
+用户本轮指定 ROS1、转角按rad、轴距先用0.30m。当前命令默认 --ros 1，配置已选 speed_steering_angle。
+“rad吧”和“先按30cm”作为接入假设记录，protocol_confirmed/geometry_confirmed仍等待现场核验。
+本次更新的验证记录在 validation/ros1_rad_030m_r2/：26项核心测试通过，隔离ROS1通信确认Angular.Z=delta。
+validation/ 下原有报告保留为初版历史证据，其中0.25m/yaw_rate测试参数不是本次接入配置。
 
 一、旧 MATLAB 通信与现在的动作含义
 ================================
@@ -32,7 +36,9 @@ Position.X、Position.Y 是位置，Position.Z 被当作 yaw 使用；不能按�
   speed_yaw_rate：Linear.X=v；Angular.Z=v*tan(delta)/L，L 为实测轴距。
 steering_sign 用于已标定的转向正负号。delta 为等效前轮转角，不能当作舵机 PWM 或未经标定的舵机轴角。
 前轮左右 Ackermann 几何和舵机标定由现有底层实现；本程序不发后轮转角指令。
-默认 unconfirmed、L=null，因此配置原样不能启动实车输出。
+当前默认 speed_steering_angle、L=0.30m：底盘 Angular.Z 直接发送经过监督后的delta [rad]，不转换为yaw_rate。
+L在该模式下用于估算转弯角速度并限幅；不改变网络权重，也不自动补偿与仿真轴距的差异。
+现场确认项仍为false，因此配置原样只能做shadow，不能启动实车输出。
 
 二、结构及文件
 ==============
@@ -55,7 +61,7 @@ validation/：本轮验证报告和离线候选输出；不是实车实验结果
 
 三、先确认实车信息
 ==================
-1. ROS 发行版及 TX2 的 Python/NumPy 环境。运行代码为 Python 3.6+ 语法，不能直接用 Python2 执行。
+1. 已选ROS1，具体发行版及 TX2 的 Python/NumPy 环境待现场核对。运行代码为 Python 3.6+ 语法，不能直接用 Python2 执行。
    运行依赖 numpy，以及对应 Python 的 rospy 或 rclpy、geometry_msgs、std_msgs、std_srvs。
    ROS1/ROS2 的 Python 绑定必须与所用解释器匹配；本包不安装或升级 JetPack/系统 ROS。
    服务器已验证 Python3.13/NumPy2.3 和 Python3.7/NumPy1.21 的核心；未实测 Python3.6/TX2。
@@ -71,6 +77,8 @@ validation/：本轮验证报告和离线候选输出；不是实车实验结果
 上述校准填入 config/single_car_clean.json 的副本。不要仅把 confirmed 改为 true 来绕过检查。
 protocol_confirmed、geometry_confirmed、transform_confirmed、geofence_confirmed 都是实测确认状态。
 vehicle_length/width、geofence 当前为模板值，不是本实验室场地或实车测量结果。
+特别是旧模板车长0.24m小于暂定轴距0.30m，不能用于这辆实车；需填写实测车体包络，不能由轴距猜车长。
+guard会拒绝车长小于轴距的配置，即使误将geometry_confirmed设为true也不能arm。
 速度初始限值 0.15m/s、加速度 0.20m/s²、转角速度 0.20rad/s、角速度 0.35rad/s 是待标定调试设置，
 不构成已验证安全阈值。这些新增限制会改变闭环行为，不能把实车表现与仿真表直接视为同协议。
 

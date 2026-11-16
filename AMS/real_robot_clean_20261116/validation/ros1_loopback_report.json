@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "isolated_master": "http://127.0.0.1:32791",
+  "physical_hardware_connected": false,
+  "explicit_arming": true,
+  "hung_policy_stops_and_latches": true,
+  "lost_mocap_stops": true,
+  "explicit_stop_stops_and_latches": true,
+  "output_samples": 113,
+  "max_mock_speed_mps": 0.02810039380565286
+}

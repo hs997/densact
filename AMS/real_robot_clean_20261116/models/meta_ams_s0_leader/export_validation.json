@@ -1,0 +1,9 @@
+{
+  "samples": 4096,
+  "max_absolute_error": 5.245208740234375e-06,
+  "tolerance_atol": 1e-05,
+  "tolerance_rtol": 1e-05,
+  "passed": true,
+  "runtime_torch_required": false,
+  "checkpoint_sha256": "7956bb7960862b12cd26808cf4c526e5b85fe6dcb2779355cf502ff2ef234026"
+}

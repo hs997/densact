@@ -1,0 +1,55 @@
+{
+  "schema": "ams_single_leader_clean_v1",
+  "attack": "off",
+  "topics": {
+    "mocap": "/mocap_position_05",
+    "chassis": "/wheeltec_05/cmd_vel",
+    "candidate": "/ams/car05/candidate_speed_steering",
+    "estop": "/ams/car05/estop",
+    "status": "/ams/car05/guard_status"
+  },
+  "control": {"rate_hz": 50.0, "max_run_s": 70.0},
+  "hardware": {
+    "command_mode": "unconfirmed",
+    "wheelbase_m": null,
+    "steering_sign": 1,
+    "protocol_confirmed": false,
+    "geometry_confirmed": false,
+    "base_command_timeout_verified": false
+  },
+  "mocap": {
+    "encoding": "xy_yaw_position_z",
+    "yaw_unit": "rad",
+    "expected_frame_id": "",
+    "origin_world_xy": [0.0, 0.0],
+    "origin_model_xy": [-8.75, -0.065],
+    "path_heading_world_rad": 0.0,
+    "marker_to_body_yaw_rad": 0.0,
+    "body_to_marker_xy_m": [0.0, 0.0],
+    "transform_confirmed": false,
+    "timeout_s": 0.15,
+    "max_source_age_s": 0.15,
+    "max_future_s": 0.03,
+    "max_sample_gap_s": 0.15,
+    "velocity_filter_tau_s": 0.05,
+    "max_speed_mps": 1.0,
+    "max_yaw_rate_rps": 2.0
+  },
+  "safety": {
+    "command_timeout_s": 0.12,
+    "max_speed_mps": 0.15,
+    "max_steering_rad": 0.128,
+    "max_yaw_rate_rps": 0.35,
+    "max_acceleration_mps2": 0.20,
+    "max_steering_rate_rps": 0.20,
+    "max_tracking_error_m": 0.45,
+    "max_heading_error_rad": 0.50,
+    "vehicle_length_m": 0.24,
+    "vehicle_width_m": 0.20,
+    "model_geofence_xyxy": [-9.5, -1.72, 0.0, 0.47],
+    "geofence_confirmed": false,
+    "arm_position_tolerance_m": 0.10,
+    "arm_yaw_tolerance_rad": 0.12,
+    "arm_speed_tolerance_mps": 0.03
+  }
+}

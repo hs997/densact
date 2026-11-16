@@ -1,0 +1,11 @@
+{
+  "ended_wall_time": 1794801020.8828726,
+  "status": "stopped",
+  "error": null,
+  "role": "guard",
+  "execute": true,
+  "final_guard_mode": "STOPPED",
+  "final_guard_reason": "operator_estop",
+  "single_vehicle_completed": false,
+  "partial_data_preserved": true
+}

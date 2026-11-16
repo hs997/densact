@@ -1,0 +1,5 @@
+{
+  "url": "https://raw.githubusercontent.com/hs997/densact/dddbe56bdcbb55688deec7657a3d234a8490440e/AMS/Proposed_methodROS0724.m",
+  "sha256": "33f56207b6ca29950bdde3c7714e35ebbfd77f9024d6d1684f7b91256f08a064",
+  "use": "Communication reference only; original MATLAB controller and gains are not the deployed policy."
+}

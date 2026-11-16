@@ -1,0 +1,39 @@
+{
+  "date": "2026-11-16",
+  "unit_tests": {
+    "count": 25,
+    "python_3_13_numpy_2_3": "passed",
+    "python_3_7_numpy_1_21_6": "passed"
+  },
+  "runtime_syntax": {
+    "run_node.py": "Python 3.6 syntax accepted",
+    "stop_keyboard.py": "Python 3.6 syntax accepted",
+    "ros_io.py": "Python 3.6 syntax accepted",
+    "core.py": "Python 3.6 syntax accepted",
+    "benchmark.py": "Python 3.6 syntax accepted"
+  },
+  "server_benchmark": {
+    "machine": "x86_64",
+    "samples": 2000,
+    "median_ms": 0.042369007132947445,
+    "p99_ms": 0.050078314961865544,
+    "max_ms": 0.07222697604447603,
+    "includes_ROS": false,
+    "TX2_tested": false
+  },
+  "default_config_execute_preflight": "blocked before ROS init / publisher creation; expected exit 2",
+  "hardware_connected": false,
+  "ROS2_tested": false,
+  "training_started": false,
+  "simulation_started": false,
+  "hardware_test_pending": [
+    "Angular.Z protocol and units",
+    "measured wheelbase and steering sign/calibration",
+    "motion capture convention, timestamp and frame transform",
+    "vehicle dimensions and field boundary",
+    "STM32 command timeout and physical stop",
+    "TX2 end-to-end runtime"
+  ],
+  "source_parity": "source_parity_20261116/source_parity.json",
+  "ros1_test": "ros1_loopback_report.json"
+}

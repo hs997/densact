@@ -1,0 +1,94 @@
+{
+  "passed": true,
+  "recorded_states": 3499,
+  "synthetic_states": 2048,
+  "obs_max_absolute_error": 1.383945345878601e-06,
+  "semantic_action_max_absolute_error": 2.8312206268310547e-07,
+  "physical_action_max_absolute_error": 8.940696716308594e-08,
+  "source_hash_matches": {
+    "source/my_exts/marl_platoon/tasks/platoon/config.py": {
+      "sha256": "809c66f9c81972bfa403c617077e3a4e29feb5b56a3adca05f9d3d1158b90fa0",
+      "current": "/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/tasks/platoon/config.py",
+      "snapshot": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_completion_20261027/source_snapshot/source/my_exts/marl_platoon/tasks/platoon/config.py"
+    },
+    "source/my_exts/marl_platoon/trajectory.py": {
+      "sha256": "5bed49bbf4baf7c8cb2f37b3171bc92e2cf143a1112601c4d99b22f2b53aa41b",
+      "current": "/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/trajectory.py",
+      "snapshot": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_completion_20261027/source_snapshot/source/my_exts/marl_platoon/trajectory.py"
+    },
+    "source/my_exts/marl_platoon/algorithms/shield.py": {
+      "sha256": "7ddb7f9fdfef21c971cc0dd35c249916d36bc54fe859f1d52b1adc3029a84baf",
+      "current": "/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/algorithms/shield.py",
+      "snapshot": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_completion_20261027/source_snapshot/source/my_exts/marl_platoon/algorithms/shield.py"
+    },
+    "source/my_exts/marl_platoon/ackermann_action.py": {
+      "sha256": "40831f8b427c65f44aee4135cc30175c54f1eb1126203f1735b734e66857abf5",
+      "current": "/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/ackermann_action.py",
+      "snapshot": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_completion_20261027/source_snapshot/source/my_exts/marl_platoon/ackermann_action.py"
+    },
+    "source/my_exts/marl_platoon/algorithms/happo/actor.py": {
+      "sha256": "f39f70cce1006e3429a2ad8e60786487bf6beac8361f23eaff2b06df91b216cd",
+      "current": "/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/algorithms/happo/actor.py",
+      "snapshot": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_completion_20261027/source_snapshot/source/my_exts/marl_platoon/algorithms/happo/actor.py"
+    },
+    "source/my_exts/marl_platoon/wrappers.py": {
+      "sha256": "61a332647804aba1388c87add0b0aba32c415c9f81ed32d0c46a85376693ffe4",
+      "current": "/home/cnc/SSD_1T/xzw/IsaacLab-main/source/my_exts/marl_platoon/wrappers.py",
+      "snapshot": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/ackermann_completion_20261027/source_snapshot/source/my_exts/marl_platoon/wrappers.py"
+    }
+  },
+  "queue_manifest_sha256": "aae1ff1ddab4f6a965ee207f98057f37667602864512c84f821c92a1071d78bb",
+  "env_yaml_sha256": "9a82e8cdb746f3ce7265da0ed700ed3bb6edbae51dbc585c7e2d5ee02739be70",
+  "trajectory_sha256": "4a859dcb97ba4c00ae2bc35a0413f79b3b6198d97a48abea7130278bf683992c",
+  "model": {
+    "schema": "ams_leader_numpy_v1",
+    "obs_dim": 11,
+    "act_dim": 2,
+    "agent_index": 0,
+    "sizes": [
+      11,
+      256,
+      256,
+      2
+    ],
+    "activation": "ELU(alpha=1)",
+    "inference": "deterministic Gaussian mean; no sampling, teacher, critic or online updates",
+    "weights_sha256": "d91a533d3294a834954d54062bbd4eb91bbcbb61d1bc8b11b72468bc8a24747e",
+    "checkpoint": "/home/cnc/SSD_1T/xzw/IsaacLab-main/logs/rsl_rl/platoon_happo/2026-10-29_00-17-09_ackermann_completion_20261027_s0_happo_meta_ams_hard_b_r1_happo_meta_ams/model_final.pt",
+    "checkpoint_sha256": "7956bb7960862b12cd26808cf4c526e5b85fe6dcb2779355cf502ff2ef234026",
+    "env_yaml_sha256": "9a82e8cdb746f3ce7265da0ed700ed3bb6edbae51dbc585c7e2d5ee02739be70",
+    "actor_source_sha256": "f39f70cce1006e3429a2ad8e60786487bf6beac8361f23eaff2b06df91b216cd",
+    "profile": {
+      "action_clip": 0.4,
+      "max_speed_mps": 1.2,
+      "max_steering_rad": 0.32,
+      "simulation_wheelbase_m": 0.14325,
+      "nominal_control_dt_s": 0.02,
+      "path": {
+        "start_x": -7.75,
+        "length_m": 6.0,
+        "start_y": -0.065,
+        "end_y": -1.16
+      },
+      "shield": {
+        "enabled": true,
+        "lateral_tol": 0.035,
+        "centerline_turn_gain": 0.28,
+        "centerline_turn_clip": 0.08,
+        "centerline_turn_sign": 1.0
+      },
+      "completion": {
+        "progress": 0.99,
+        "lateral_m": 0.12,
+        "heading_rad": 0.12,
+        "dwell_s": 2.0
+      }
+    }
+  },
+  "limits": [
+    "No ROS, physics, hardware or closed-loop rollout executed.",
+    "Historical hard-b states are inputs for clean function parity, not clean success evidence.",
+    "Harness supplies planar quaternion rotation and environment tensors; original function bodies unchanged.",
+    "Additional physical commissioning guard limits intentionally differ from simulator execution."
+  ]
+}
